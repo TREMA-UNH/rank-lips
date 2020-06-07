@@ -87,6 +87,7 @@ import TrainAndSave
 
 import Debug.Trace  as Debug
 import CAR.Types (ParagraphId)
+import CAR.ToolVersion (execParser')
 
 type NumResults = Int
 
@@ -101,45 +102,42 @@ data FeatureVariant = FeatScore
 type RankEntry = SimplirRun.DocumentName
 
 
--- defaultMiniBatchParams :: MiniBatchParams
--- defaultMiniBatchParams = MiniBatchParams 1 100 0
-
-
--- relevance :: M.Map (queryId, docId) IsRelevant
--- relevance = M.fromList [ ((qid, doc), rel)
---                             | QRel.Entry qid doc rel <- qrel
---                             ]
-
--- qrel :: [QRel.Entry SimplirRun.QueryId doc IsRelevant]
--- qrel = undefined
-
-includeCv = True
+includeCv = False
 
 -- startDir = "/home/dietz/trec-car/code/mediawiki-annotate/data/rank-lips"
-startDir = "/home/dietz/trec-car/code/mediawiki-annotate/data/eal-single"
+-- startDir = "/home/dietz/trec-car/code/mediawiki-annotate/data/eal-single"
 -- startDir = "/home/dietz/trec-car/code/mediawiki-annotate/data/eal-tools"
 
-dirPrefix = startDir </> "features"
+-- dirPrefix = startDir </> "features"
 outputFilePrefix :: FilePath
 outputFilePrefix =  ""
 
+miniBatchParams :: MiniBatchParams
 miniBatchParams = defaultMiniBatchParams
 
--- type TrainData f s = M.Map Q [(DocId, FeatureVec f s Double, Rel)]
+opts :: Parser (IO ())
+opts = subparser
+    $  cmd "train"        doTrain'
+  where
+    cmd name action = command name (info (helper <*> action) fullDesc)
 
-main :: IO ()
-main = do
+    doTrain' =
+        f <$> option str (long "feature-runs-directory" <> short 'd' <> help "directory containing run files for features" <> metavar "DIR")
+          <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )
+          <*> option str (long "model" <> short 'm' <> help "file where model parameters will be written to" <> metavar "FILE" )
+          <*> many (option str (long "feature" <> short 'f' <> help "feature name, needs to match filename in feature-runs-directory" <> metavar "FEATURE") )
+      where
+        f featureRunsDirectory qrelFile modelFile features = 
+            doTrain featureRunsDirectory qrelFile modelFile features 
 
-    let modelFile =  startDir </> "model"
-        qrelFile =  startDir </> "demo-train.qrel"
+
+
+doTrain :: FilePath -> FilePath -> FilePath -> [FilePath] ->  IO ()
+doTrain featureRunsDirectory qrelFile modelFile runFilenames = do
 
     let updatedModelFile = modelFile <> ".json"
         (MiniBatchParams batchSteps batchSize evalSteps) = miniBatchParams
         evalSteps' = evalSteps +2
---               pageRankSteps = evalSteps'
-    -- putStrLn "loading model"
-    -- Just (SomeModel model) <-  Data.Aeson.decode @(SomeModel Feat) <$> BSL.readFile modelFile
-    -- putStrLn "loaded model."
 
 
     qrelData <- QRel.readQRel qrelFile
@@ -159,15 +157,12 @@ main = do
                                 Nothing -> defaultRel
                                 Just r -> r
 
-
-
-
-
  
-    let runFilenames :: [FilePath]
-        runFilenames = ["PARA_CONTENT_TO_ASPECT_HEADER_TFIDF", "SENT_CONTENT_TO_ASPECT_HEADER_BM25", "SIMP_SENT_ENTITIES_OVERLAP"]
+    -- let runFilenames :: [FilePath]
+        -- runFilenames = ["PARA_CONTENT_TO_ASPECT_HEADER_TFIDF", "SENT_CONTENT_TO_ASPECT_HEADER_BM25", "SIMP_SENT_ENTITIES_OVERLAP"]
         -- runFilenames = ["f1","f2","f3"]
 
+    let
         featureNames :: S.Set Feat
         featureNames = S.fromList $ [ augmentFname ft run 
                                     | run <-  runFilenames
@@ -176,23 +171,12 @@ main = do
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
-    runFiles <- loadRunFiles  dirPrefix runFilenames
+    runFiles <- loadRunFiles  featureRunsDirectory runFilenames
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     let featureDataMap = runFilesToFeatureVectorsMap fspace runFiles
         featureDataList = fmap M.toList featureDataMap
 
-
-    -- let docFeatures :: M.Map (QueryId, DocId) (FeatureVec Feat ph Double)
-    --     docFeatures = M.fromList
-    --                 $ [ ((q,doc), F.fromList fspace featureList )
-    --                   | (q, entries) <- M.toList collapsedRun
-    --                   , (MultiRankingEntry {multiRankingEntryAll = list}) <- entries
-    --                   , let featureList = 
-    --                          [ (fname, fscore)
-    --                          | (fname, CarRun.RankingEntry{carScore=fscore}) <- list
-    --                          ] 
-    --                   ]
 
         allDataMap :: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName  (FeatureVec Feat ph Double, Rel))
         allDataMap = augmentWithQrelsMap_ (lookupQrel NotRelevant) featureDataMap
@@ -200,12 +184,6 @@ main = do
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList
 
-
-
-    -- let augmentWithQrels :: QueryId -> Ranking Double RankEntry -> Ranking Double (RankEntry, IsRelevant)
-    --     augmentWithQrels query =
-    --         fmap (\page -> (page, lookupQrel NotRelevant query page))
- 
         totalRels :: M.Map SimplirRun.QueryId Int
         !totalRels = fmap countRel qrelMap
                     where countRel :: M.Map x IsRelevant -> Int
@@ -221,17 +199,7 @@ main = do
 
     gen0 <- newStdGen
 
-    -- only get the edge features out
-    -- Just (F.FeatureMappingInto toEdgeVec) <- pure $ F.mapFeaturesInto (modelFeatures model) (edgeFSpace fspaces) (either (const Nothing) Just)
-    
-
-
     train includeCv fspace allDataList qrelData miniBatchParams outputFilePrefix modelFile
-
-
--- type TrainData ph = M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName  (FeatureVec Feat ph Double, Rel))
--- type TrainData f s = M.Map Q [(DocId, FeatureVec f s Double, Rel)]
-
 
 
 train :: Bool
@@ -346,3 +314,9 @@ runFilesToFeatureVectorsMap fspace runData =
 head' :: HasCallStack => [a] -> a
 head' (x:_) = x
 head' [] = error $ "head': empty list"
+
+
+
+
+main :: IO ()
+main = join $ execParser' 1 (helper <*> opts) mempty
