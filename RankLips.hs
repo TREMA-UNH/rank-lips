@@ -59,6 +59,8 @@ import Data.List.Split
 import qualified Codec.Serialise as CBOR
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 
+import System.Directory
+
 
 
 -- import CAR.Retrieve as Retrieve
@@ -127,10 +129,15 @@ opts = subparser
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be written to" <> metavar "FILE" )
           <*> many (option str (long "feature" <> short 'f' <> help "feature name, needs to match filename in feature-runs-directory" <> metavar "FEATURE") )
       where
-        f featureRunsDirectory qrelFile modelFile features = 
-            doTrain featureRunsDirectory qrelFile modelFile features 
+        f featureRunsDirectory qrelFile modelFile features = do
+            featureFiles <- listDirectory featureRunsDirectory
 
+            let features' = case features of
+                                [] -> featureFiles
+                                fs -> fs 
+            doTrain featureRunsDirectory qrelFile modelFile features'
 
+ 
 
 doTrain :: FilePath -> FilePath -> FilePath -> [FilePath] ->  IO ()
 doTrain featureRunsDirectory qrelFile modelFile runFilenames = do
