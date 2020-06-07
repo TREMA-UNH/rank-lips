@@ -47,7 +47,7 @@ executable rank-lips
   main-is:             RankLips.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.13 && <4.14
+  build-depends:       base >=4.12 && <4.14
   ghc-options:         -Wall -rtsopts -eventlog
   build-depends:       base,
                        async,
