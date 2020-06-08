@@ -202,15 +202,16 @@ opts = subparser
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be written to" <> metavar "FILE" )
           <*> (minibatchParser <|> pure defaultMiniBatchParams)
           <*> (flag False True ( long "train-cv" <> help "Also train with 5-fold cross validation"))
+          <*> (flag False True ( long "z-score" <> help "Z-score normalize features"))
      
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> MiniBatchParams -> Bool -> IO()
-        f fparams@FeatureParams{..} outputFilePrefix qrelFile modelFile miniBatchParams includeCv = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> MiniBatchParams -> Bool -> Bool -> IO()
+        f fparams@FeatureParams{..} outputFilePrefix qrelFile modelFile miniBatchParams includeCv useZscore = do
             dirFeatureFiles <- listDirectory featureRunsDirectory
             let features' = case features of
                                 [] -> dirFeatureFiles
                                 fs -> fs 
-            doTrain (fparams{features=features'}) outputFilePrefix modelFile qrelFile miniBatchParams includeCv
+            doTrain (fparams{features=features'}) outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZscore
 
     doPredict' =
         f <$> featureParamsParser
@@ -316,8 +317,9 @@ doTrain :: FeatureParams
             -> FilePath 
             -> MiniBatchParams
             -> Bool
+            -> Bool
             ->  IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile miniBatchParams includeCv = do
+doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZScore = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -333,20 +335,24 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
         featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
+        featureDataList' =
+            if useZScore
+              then
+                let -- Todo: save norm parameter, so we can use it during prediction    
+                    zNorm :: Normalisation Feat ph Double
+                    zNorm = zNormalizer $ [ feat
+                                        | (_, list )<- M.toList featureDataList
+                                        , (_, feat ) <- list
+                                        ]
+                    featureDataListZscore :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
+                    featureDataListZscore = fmap normDocs featureDataList
+                      where normDocs list =
+                                [ (doc, (normFeatures zNorm) feat)
+                                | (doc, feat) <- list    
+                                ]
+                  in featureDataListZscore
 
-
-        -- Todo: save norm parameter, so we can use it during prediction    
-        zNorm :: Normalisation Feat ph Double
-        zNorm = zNormalizer $ [ feat
-                            | (_, list )<- M.toList featureDataList
-                            , (_, feat ) <- list
-                            ]
-        featureDataList' :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
-        featureDataList' = fmap normDocs featureDataList
-          where normDocs list =
-                    [ (doc, (normFeatures zNorm) feat)
-                    | (doc, feat) <- list    
-                    ]
+                else featureDataList
 
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
