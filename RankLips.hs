@@ -38,6 +38,7 @@ import GHC.Generics
 import GHC.Stack
 import Control.Exception
 import System.FilePath
+import Text.Read
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -92,15 +93,17 @@ type NumResults = Int
 
 
 newtype Feat = Feat { featureName :: T.Text }
-    deriving (Eq, Show, Ord, Read)
+    deriving (Eq, Ord )
+instance Show Feat where
+    show = show . featureName
+instance Read Feat where
+    readPrec = fmap Feat readPrec
+
 
 data FeatureVariant = FeatScore | FeatRecipRank
     deriving (Eq, Show, Ord,  Read, Enum, Bounded)  
 
-
 type RankEntry = SimplirRun.DocumentName
-
-
 
 
 minibatchParser :: Parser MiniBatchParams
