@@ -267,6 +267,17 @@ storeModelData outputFilePrefix modelFile model trainScore modelDesc = do
   putStrLn $ "Written model "++modelDesc++ " to file "++ (show modelFile') ++ " ."
 
 
+loadModelData :: (Show f, Read f, Ord f)
+               => FilePath
+               -> IO (SomeModel f)
+loadModelData modelFile  = do
+  modelOpt <- Data.Aeson.decode  <$> BSL.readFile modelFile 
+  return $
+    case modelOpt of
+      Nothing -> error $ "Model filed "<> modelFile<> " does not exist."
+      Just model -> model
+
+
 
 storeRankingData ::  FilePath
                -> M.Map  Q (Ranking Double (QRel.DocumentName, IsRelevant))
@@ -275,7 +286,8 @@ storeRankingData ::  FilePath
                -> IO ()
 storeRankingData outputFilePrefix ranking metric modelDesc = do
   putStrLn $ "Model "++modelDesc++" test metric "++ show (metric ranking) ++ " MAP."
-  SimplirRun.writeRunFile (outputFilePrefix++"-model-"++modelDesc++".run")
+  let runFile' = outputFilePrefix++"-run-"++modelDesc++".run"
+  SimplirRun.writeRunFile (runFile')
        $ l2rRankingToRankEntries (T.pack $ "l2r "++modelDesc)
        $ ranking
 
@@ -286,7 +298,8 @@ storeRankingDataNoMetric :: FilePath
                          -> IO ()
 storeRankingDataNoMetric outputFilePrefix ranking modelDesc = do
   putStrLn $ "Model "++modelDesc++" .. no metric.."
-  SimplirRun.writeRunFile (outputFilePrefix++"-model-"++modelDesc++".run")
+  let runFile' = outputFilePrefix++"-run-"++modelDesc++".run"
+  SimplirRun.writeRunFile (runFile')
        $ l2rRankingToRankEntries (T.pack $ "l2r "++modelDesc)
        $ ranking
 

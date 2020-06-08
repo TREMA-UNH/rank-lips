@@ -85,6 +85,7 @@ executable rank-lips
                        snowball,
                        time,
                        split,
+                       directory,
                        graph-algorithms,
                        simplir-word-embedding,
                        simplir-learning-to-rank,
