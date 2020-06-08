@@ -64,9 +64,12 @@ type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel
 type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
+
+
 trainMe :: forall f s. (Ord f, Show f)
         => Bool
         -> MiniBatchParams
+        -> ConvergenceDiagParams
         -> EvalCutoff
         -> StdGen
         -> TrainData f s
@@ -75,7 +78,7 @@ trainMe :: forall f s. (Ord f, Show f)
         -> FilePath
         -> FilePath
         -> IO ()
-trainMe includeCv miniBatchParams evalCutoff gen0 trainData fspace metric outputFilePrefix modelFile = do
+trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix modelFile = do
           -- train me!
           let nRestarts = 5
               nFolds = 5
@@ -89,7 +92,7 @@ trainMe includeCv miniBatchParams evalCutoff gen0 trainData fspace metric output
 
           let trainFun :: FoldIdx -> TrainData f s -> [(Model f s, Double)]
               trainFun foldIdx =
-                  take nRestarts . trainWithRestarts miniBatchParams evalCutoff gen0 metric infoStr fspace
+                  take nRestarts . trainWithRestarts miniBatchParams convDiagParams evalCutoff gen0 metric infoStr fspace
                 where
                   infoStr = show foldIdx
 
@@ -102,7 +105,7 @@ trainMe includeCv miniBatchParams evalCutoff gen0 trainData fspace metric output
           putStrLn "full Train"
           -- full train
           let fullRestarts = withStrategy (parTraversable rdeepseq)
-                             $ take nRestarts $ trainWithRestarts miniBatchParams evalCutoff gen0 metric "full" fspace trainData
+                             $ take nRestarts $ trainWithRestarts miniBatchParams convDiagParams evalCutoff gen0 metric "full" fspace trainData
               (model, trainScore) = Debug.trace ("full Train - best Model") 
                                   $    bestModel $  fullRestarts
               fullActions = Debug.trace ("full Train - dump Model")
@@ -120,9 +123,13 @@ trainMe includeCv miniBatchParams evalCutoff gen0 trainData fspace metric output
               mapConcurrentlyL_ 24 id $ fullActions
           putStrLn "dumped all models and rankings"
 
+
+type ConvergenceDiagParams = (Double, Int, Int)
+
 trainWithRestarts
     :: forall f s. (Show f)
     => MiniBatchParams
+    -> ConvergenceDiagParams
     -> EvalCutoff
     -> StdGen
     -> ScoringMetric IsRelevant Q
@@ -131,7 +138,7 @@ trainWithRestarts
     -> TrainData f s
     -> [(Model f s, Double)]
        -- ^ an infinite list of restarts
-trainWithRestarts miniBatchParams evalCutoff gen0 metric info fspace trainData =
+trainWithRestarts miniBatchParams (convThreshold, convMaxIter, convDropIter) evalCutoff gen0 metric info fspace trainData =
   let trainData' = discardUntrainable trainData
 
       rngSeeds :: [StdGen]
@@ -140,7 +147,7 @@ trainWithRestarts miniBatchParams evalCutoff gen0 metric info fspace trainData =
       restartModel :: Int -> StdGen -> (Model f s, Double)
       restartModel restart =
           learnToRank miniBatchParams
-                      (defaultConvergence info' 1e-2 10 0)
+                      (defaultConvergence info' convThreshold convMaxIter convDropIter)
                       evalCutoff trainData' fspace metric
         where
           info' = info <> " restart " <> show restart
