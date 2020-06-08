@@ -330,10 +330,26 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
     QrelInfo{..} <- loadQrelInfo qrelFile
 
     let featureDataMap = runFilesToFeatureVectorsMap fspace produceFeatures runFiles
+        featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
+
+
+        -- Todo: save norm parameter, so we can use it during prediction    
+        zNorm :: Normalisation Feat ph Double
+        zNorm = zNormalizer $ [ feat
+                            | (_, list )<- M.toList featureDataList
+                            , (_, feat ) <- list
+                            ]
+        featureDataList' :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
+        featureDataList' = fmap normDocs featureDataList
+          where normDocs list =
+                    [ (doc, (normFeatures zNorm) feat)
+                    | (doc, feat) <- list    
+                    ]
+
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
-        allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList
+        allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
     train includeCv fspace allDataList qrelData miniBatchParams outputFilePrefix modelFile
 
