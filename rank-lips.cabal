@@ -48,7 +48,7 @@ executable rank-lips
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.12 && <4.14
-  ghc-options:         -Wall -rtsopts -eventlog
+  ghc-options:         -Wall -rtsopts -threaded
   build-depends:       base,
                        async,
                        bytestring,
