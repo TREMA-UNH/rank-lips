@@ -121,17 +121,13 @@ minibatchParser = MiniBatchParams
                         } = defaultMiniBatchParams
 
 -- defaultConvergence info threshold maxIter dropIter
-data ConvergenceParams = ConvergenceParams { convergenceThreshold :: Double
-                                          , convergenceMaxIter :: Int
-                                          , convergenceDropInitIter :: Int
-                                          }
 
-defaultConvergenceParams :: ConvergenceParams
-defaultConvergenceParams = ConvergenceParams 10e-2 1000 0
+defaultConvergenceParams :: ConvergenceDiagParams
+defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0
 
-convergenceParamParser :: Parser ConvergenceParams
+convergenceParamParser :: Parser ConvergenceDiagParams
 convergenceParamParser = 
-     ConvergenceParams
+     ConvergenceDiagParams
         <$> option auto (long "convergence-threshold" <> metavar "FACTOR" <> value defThresh  
                         <> help ("being converged means that relative change in MAP between iterations is less than FACTOR, default: "<> show defThresh))
         <*> option auto (long "convergence-max-iter" <> metavar "ITER" <> value defIter 
@@ -139,9 +135,9 @@ convergenceParamParser =
         <*> option auto (long "convergence-drop-initial-iterations" <> metavar "ITER" <> value defDrop 
                         <> help ("number of initial iterations to disregard before convergence is monitored, default: "<> show defDrop))
   
-  where ConvergenceParams { convergenceThreshold=defThresh
-                          , convergenceMaxIter=defIter
-                          , convergenceDropInitIter=defDrop} = defaultConvergenceParams
+  where ConvergenceDiagParams { convergenceThreshold=defThresh
+                             , convergenceMaxIter=defIter
+                             , convergenceDropInitIter=defDrop} = defaultConvergenceParams
 
 
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
@@ -219,6 +215,16 @@ noQrelInfo = QrelInfo { qrelData = []
 
 
 
+createModelEnvelope :: Maybe MiniBatchParams
+                    -> Maybe EvalCutoff
+                    -> Maybe ConvergenceDiagParams
+                    -> Maybe Bool
+                    -> (Maybe Bool -> ModelEnvelope f)
+createModelEnvelope minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
+    (\useCv someModel -> RankLipsModel{..})
+
+
+
 opts :: Parser (IO ())
 opts = subparser
     $  cmd "train"        doTrain'
@@ -237,7 +243,7 @@ opts = subparser
           <*> convergenceParamParser
      
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> MiniBatchParams -> Bool -> Bool -> ConvergenceParams-> IO()
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> MiniBatchParams -> Bool -> Bool -> ConvergenceDiagParams-> IO()
         f fparams@FeatureParams{..} outputFilePrefix qrelFile modelFile miniBatchParams includeCv useZscore convergenceParams = do
             dirFeatureFiles <- listDirectory featureRunsDirectory
             let features' = case features of
@@ -350,7 +356,7 @@ doTrain :: FeatureParams
             -> MiniBatchParams
             -> Bool
             -> Bool
-            -> ConvergenceParams
+            -> ConvergenceDiagParams
             ->  IO ()
 doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZScore convergenceParams = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
@@ -390,7 +396,11 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
-    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams outputFilePrefix modelFile
+        evalCutoff = (EvalCutoffAt 100)
+
+        modelEnvelope = createModelEnvelope (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
+
+    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelFile modelEnvelope
 
 
 train :: Bool
@@ -398,11 +408,13 @@ train :: Bool
       -> TrainData Feat ph
       -> [QRel.Entry SimplirRun.QueryId doc IsRelevant]
       -> MiniBatchParams
-      -> ConvergenceParams
+      -> ConvergenceDiagParams
+      -> EvalCutoff
       -> FilePath
       -> FilePath
+      -> _
       -> IO()
-train includeCv fspace allData qrel miniBatchParams ConvergenceParams{..} outputFilePrefix modelFile =  do
+train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelFile modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
         !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
         totalElems = getSum . foldMap ( Sum . length ) $ allData
@@ -422,8 +434,8 @@ train includeCv fspace allData qrel miniBatchParams ConvergenceParams{..} output
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainMe includeCv miniBatchParams (convergenceThreshold, convergenceMaxIter, convergenceDropInitIter) (EvalCutoffAt 100) 
-            gen0 allData fspace metric outputFilePrefix modelFile
+    trainMe includeCv miniBatchParams convergenceDiagParams evalCutoff
+            gen0 allData fspace metric outputFilePrefix modelFile modelEnvelope
 
 
 
