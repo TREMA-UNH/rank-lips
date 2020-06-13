@@ -223,7 +223,7 @@ createModelEnvelope :: (Model f ph -> Model f ph)
                     -> (Maybe Bool -> ModelEnvelope f ph)
 createModelEnvelope modelConv minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
     (\useCv someModel' -> 
-        let someModel = modelConv someModel'
+        let trainedModel = modelConv someModel'
         in RankLipsModel{..}
     )
 
@@ -265,9 +265,13 @@ opts = subparser
         f fparams@FeatureParams{..} outputFilePrefix qrelFileOpt modelFile = do
             -- Todo: Load features from Model
             
-            sm@(SomeModel model) <- loadModelData modelFile
-                                    :: IO (SomeModel Feat)
-            let fspace = modelFeatures model  
+            -- sm@(SomeModel model) <- loadModelData modelFile
+            --                         :: IO (SomeModel Feat)
+
+            SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- loadRankLipsModel modelFile
+
+            let model = trainedModel lipsModel
+                fspace = modelFeatures model  
                 modelFeatureFiles = F.featureNames fspace 
 
             dirFiles <- listDirectory featureRunsDirectory
@@ -280,7 +284,7 @@ opts = subparser
                              ++ show missingFeatures
 
             let revertedModelFeatureFiles = revertFeatureFileNames modelFeatureFiles
-            doPredict (fparams{features= revertedModelFeatureFiles }) outputFilePrefix sm qrelFileOpt
+            doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix model qrelFileOpt
 
 
 
@@ -320,12 +324,13 @@ loadQrelInfo qrelFile = do
 
 
 
-doPredict :: FeatureParams
+doPredict :: forall ph 
+            . FeatureParams
             -> FilePath 
-            -> SomeModel Feat
+            -> Model Feat ph
             -> Maybe FilePath 
             -> IO () 
-doPredict featureParams@FeatureParams{..} outputFilePrefix (SomeModel (model :: Model Feat ph)) qrelFileOpt  = do
+doPredict featureParams@FeatureParams{..} outputFilePrefix model qrelFileOpt  = do
     let FeatureSet {featureNames=featureNames, produceFeatures=produceFeatures}
          = featureSet featureParams
 

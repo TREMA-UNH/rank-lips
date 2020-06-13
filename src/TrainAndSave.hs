@@ -62,7 +62,7 @@ type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel
 type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
-data RankLipsModel f s = RankLipsModel { someModel :: Model f s
+data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , minibatchParamsOpt :: Maybe MiniBatchParams
                                        , evalCutoffOpt :: Maybe EvalCutoff
                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
@@ -74,15 +74,27 @@ data RankLipsModel f s = RankLipsModel { someModel :: Model f s
 data SomeRankLipsModel f where 
     SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
 
+
 instance (Ord f, Read f, Show f) => FromJSON (SomeRankLipsModel f) where
   parseJSON = withObject "rank-lips model" $ \o -> do
-    SomeModel someModel <- o .: "someModel"
+    SomeModel trainedModel <- o .: "trainedModel"
     minibatchParamsOpt <- o .: "minibatchParamsOpt"
     evalCutoffOpt <- o .: "evalCutoffOpt"
     convergenceDiagParameters <- o .: "convergenceDiagParameters"
     useZscore <- o .: "useZscore"
     useCv <- o .: "useCv"
     return $ SomeRankLipsModel $ RankLipsModel {..}
+
+
+
+loadRankLipsModel :: (Read f, Ord f, Show f) => FilePath -> IO (SomeRankLipsModel f)
+loadRankLipsModel modelFile = do
+  modelOpt <- Data.Aeson.eitherDecode  <$> BSL.readFile modelFile 
+  return $
+    case modelOpt of
+      Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
+      Right model -> model
+
 
 
 type ModelEnvelope f s = Model f s -> RankLipsModel f s
@@ -305,15 +317,18 @@ storeModelData outputFilePrefix modelFile model trainScore modelDesc modelEnvelo
   putStrLn $ "Written model "++modelDesc++ " to file "++ (show modelFile') ++ " ."
 
 
-loadModelData :: (Show f, Read f, Ord f)
+loadOldModelData :: (Show f, Read f, Ord f)
                => FilePath
                -> IO (SomeModel f)
-loadModelData modelFile  = do
-  modelOpt <- Data.Aeson.decode  <$> BSL.readFile modelFile 
+loadOldModelData modelFile  = do
+  modelOpt <- Data.Aeson.eitherDecode    <$> BSL.readFile modelFile 
   return $
     case modelOpt of
-      Nothing -> error $ "Model filed "<> modelFile<> " does not exist."
-      Just model -> model
+      Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
+      Right model -> model
+
+
+
 
 
 
