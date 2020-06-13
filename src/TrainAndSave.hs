@@ -71,6 +71,10 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        }
   deriving (Generic, ToJSON)
 
+defaultRankLipsModel :: Model f s  -> RankLipsModel f s
+defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing
+
+
 data SomeRankLipsModel f where 
     SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
 
@@ -94,7 +98,6 @@ loadRankLipsModel modelFile = do
     case modelOpt of
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
       Right model -> model
-
 
 
 type ModelEnvelope f s = Model f s -> RankLipsModel f s

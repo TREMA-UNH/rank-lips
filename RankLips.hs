@@ -233,8 +233,17 @@ opts :: Parser (IO ())
 opts = subparser
     $  cmd "train"        doTrain'
     <> cmd "predict"        doPredict'
+    <> cmd "convert-old-model"        doConvertModel'
+    <> cmd "version" doPrintVersion
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
+    
+    doPrintVersion =
+        f <$> optional (option str (short 'v'))
+      where 
+          f :: Maybe String -> IO()
+          f v = putStrLn "Rank-lips version 1.1"
+        
 
     doTrain' =
         f <$> featureParamsParser
@@ -287,6 +296,10 @@ opts = subparser
             doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix model qrelFileOpt
 
 
+    doConvertModel' =
+        convertOldModel
+             <$> argument str (metavar "FILE" <> help "old model file")
+             <*> option str (long "output" <> short 'o' <> metavar "OUT" <> help "file where new model will be written to")
 
 loadQrelInfo :: FilePath -> IO QrelInfo
 loadQrelInfo qrelFile = do
@@ -521,6 +534,14 @@ runFilesToFeatureVectorsMap fspace produceFeatures runData =
 
 
 
+
+
+
+convertOldModel :: FilePath -> FilePath -> IO()
+convertOldModel oldModelFile newRankLipsModelFile = do
+  SomeModel model <- loadOldModelData @Feat oldModelFile
+  let lipsModel = defaultRankLipsModel model
+  BSL.writeFile newRankLipsModelFile $ Data.Aeson.encode $ lipsModel
 
 
 
