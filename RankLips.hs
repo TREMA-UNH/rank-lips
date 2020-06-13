@@ -412,7 +412,7 @@ train :: Bool
       -> EvalCutoff
       -> FilePath
       -> FilePath
-      -> _
+      -> (Maybe Bool -> SomeModel Feat -> RankLipsModel Feat)
       -> IO()
 train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelFile modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
