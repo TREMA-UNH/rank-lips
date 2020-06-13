@@ -215,13 +215,17 @@ noQrelInfo = QrelInfo { qrelData = []
 
 
 
-createModelEnvelope :: Maybe MiniBatchParams
+createModelEnvelope :: (Model f ph -> Model f ph)
+                    -> Maybe MiniBatchParams
                     -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
-                    -> (Maybe Bool -> ModelEnvelope f)
-createModelEnvelope minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
-    (\useCv someModel -> RankLipsModel{..})
+                    -> (Maybe Bool -> ModelEnvelope f ph)
+createModelEnvelope modelConv minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
+    (\useCv someModel' -> 
+        let someModel = modelConv someModel'
+        in RankLipsModel{..}
+    )
 
 
 
@@ -357,7 +361,7 @@ doTrain :: FeatureParams
             -> Bool
             -> Bool
             -> ConvergenceDiagParams
-            ->  IO ()
+            -> IO ()
 doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZScore convergenceParams = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
@@ -374,31 +378,42 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
         featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
-        featureDataList' =
+        (featureDataList', createModelEnvelope') =
             if useZScore
-              then
-                let -- Todo: save norm parameter, so we can use it during prediction    
-                    zNorm :: Normalisation Feat ph Double
-                    zNorm = zNormalizer $ [ feat
-                                        | (_, list )<- M.toList featureDataList
-                                        , (_, feat ) <- list
-                                        ]
-                    featureDataListZscore :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
-                    featureDataListZscore = fmap normDocs featureDataList
-                      where normDocs list =
-                                [ (doc, (normFeatures zNorm) feat)
-                                | (doc, feat) <- list    
-                                ]
-                  in featureDataListZscore
+                then
+                    let -- Todo: save norm parameter, so we can use it during prediction    
+                        zNorm :: Normalisation Feat ph Double
+                        zNorm = zNormalizer $ [ feat
+                                            | (_, list )<- M.toList featureDataList
+                                            , (_, feat ) <- list
+                                            ]
+                        featureDataListZscore :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
+                        featureDataListZscore = fmap normDocs featureDataList
+                          where normDocs list =
+                                    [ (doc, (normFeatures zNorm) feat)
+                                    | (doc, feat) <- list    
+                                    ]
 
-                else featureDataList
+{-
+                        modelConv (SomeModel (model :: Model Feat ph)) =
+                            let modelVector :: FeatureVec Feat ph Double
+                                modelVector = getWeightVec $ modelWeights' model
+                                denormModelVector =  (denormWeights zNorm) modelVector
+                                denormModel = Model $ WeightVec denormModelVector
+                            in SomeModel denormModel
+-}
+                        modelConv (Model (WeightVec weights)) = Model (WeightVec $ denormWeights zNorm weights)
+
+                    in (featureDataListZscore, createModelEnvelope modelConv)
+
+                else (featureDataList, createModelEnvelope id)
 
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
         evalCutoff = (EvalCutoffAt 100)
 
-        modelEnvelope = createModelEnvelope (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
+        modelEnvelope = createModelEnvelope' (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelFile modelEnvelope
 
@@ -412,7 +427,7 @@ train :: Bool
       -> EvalCutoff
       -> FilePath
       -> FilePath
-      -> (Maybe Bool -> SomeModel Feat -> RankLipsModel Feat)
+      -> (Maybe Bool -> Model Feat ph -> RankLipsModel Feat ph)
       -> IO()
 train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelFile modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId

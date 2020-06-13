@@ -37,9 +37,6 @@ import Control.Parallel.Strategies
 import Control.Concurrent.Map
 import Control.DeepSeq
 
-import CAR.Types hiding (Entity)
-import qualified CAR.RunFile as CarRun
-
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
@@ -65,16 +62,30 @@ type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel
 type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
-data RankLipsModel f = RankLipsModel { someModel :: SomeModel f
-                                     , minibatchParamsOpt :: Maybe MiniBatchParams
-                                     , evalCutoffOpt :: Maybe EvalCutoff
-                                     , convergenceDiagParameters :: Maybe ConvergenceDiagParams
-                                     , useZscore :: Maybe Bool
-                                     , useCv :: Maybe Bool
-                                     }
-  deriving (Generic, FromJSON, ToJSON)
+data RankLipsModel f s = RankLipsModel { someModel :: Model f s
+                                       , minibatchParamsOpt :: Maybe MiniBatchParams
+                                       , evalCutoffOpt :: Maybe EvalCutoff
+                                       , convergenceDiagParameters :: Maybe ConvergenceDiagParams
+                                       , useZscore :: Maybe Bool
+                                       , useCv :: Maybe Bool
+                                       }
+  deriving (Generic, ToJSON)
 
-type ModelEnvelope f = SomeModel f -> RankLipsModel f
+data SomeRankLipsModel f where 
+    SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
+
+instance (Ord f, Read f, Show f) => FromJSON (SomeRankLipsModel f) where
+  parseJSON = withObject "rank-lips model" $ \o -> do
+    SomeModel someModel <- o .: "someModel"
+    minibatchParamsOpt <- o .: "minibatchParamsOpt"
+    evalCutoffOpt <- o .: "evalCutoffOpt"
+    convergenceDiagParameters <- o .: "convergenceDiagParameters"
+    useZscore <- o .: "useZscore"
+    useCv <- o .: "useCv"
+    return $ SomeRankLipsModel $ RankLipsModel {..}
+
+
+type ModelEnvelope f s = Model f s -> RankLipsModel f s
 
 
 trainMe :: forall f s. (Ord f, Show f)
@@ -88,7 +99,7 @@ trainMe :: forall f s. (Ord f, Show f)
         -> ScoringMetric IsRelevant Q
         -> FilePath
         -> FilePath
-        -> (Maybe Bool -> SomeModel f -> RankLipsModel f)
+        -> (Maybe Bool -> Model f s -> RankLipsModel f s)
         -> IO ()
 trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix modelFile modelEnvelope = do
           -- train me!
@@ -204,7 +215,7 @@ dumpKFoldModelsAndRankings
     -> ScoringMetric IsRelevant Q
     -> FilePath
     -> FilePath
-    -> ModelEnvelope f
+    -> ModelEnvelope f s
     -> [IO ()]
 dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix modelFile modelEnvelope =
     let bestPerFold' :: Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
@@ -245,13 +256,13 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix modelFile 
 
 
 dumpFullModelsAndRankings
-    :: forall f s. (Ord f, Show f)
-    => M.Map Q [(DocId, FeatureVec f s Double, Rel)]
-    -> (Model f s, Double)
+    :: forall f ph. (Ord f, Show f)
+    => M.Map Q [(DocId, FeatureVec f ph Double, Rel)]
+    -> (Model f ph, Double)
     -> ScoringMetric IsRelevant SimplirRun.QueryId
     -> FilePath
     -> FilePath
-    -> ModelEnvelope f
+    -> ModelEnvelope f ph
     -> [IO()]
 dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix modelFile modelEnvelope =
     let modelDesc = "train"
@@ -282,15 +293,15 @@ l2rRankingToRankEntries methodName rankings =
 storeModelData :: (Show f, Ord f)
                => FilePath
                -> FilePath
-               -> Model f s
+               -> Model f ph
                -> Double
                -> [Char]
-               -> ModelEnvelope f
+               -> ModelEnvelope f ph
                -> IO ()
 storeModelData outputFilePrefix modelFile model trainScore modelDesc modelEnvelope = do
   putStrLn $ "Model "++modelDesc++ " train metric "++ (show trainScore) ++ " MAP."
   let modelFile' = outputFilePrefix++modelFile++"-model-"++modelDesc++".json"
-  BSL.writeFile modelFile' $ Data.Aeson.encode $ modelEnvelope $ SomeModel model
+  BSL.writeFile modelFile' $ Data.Aeson.encode $ modelEnvelope model
   putStrLn $ "Written model "++modelDesc++ " to file "++ (show modelFile') ++ " ."
 
 
