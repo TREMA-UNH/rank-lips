@@ -20,73 +20,39 @@
 
 module Main where
 
-import Control.Concurrent.Async
 import Control.DeepSeq hiding (rwhnf)
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
 import Control.Monad
 import Control.Parallel.Strategies
-import Control.Lens (each)
-import Data.Coerce
-import Data.Tuple
 import Data.Semigroup hiding (All, Any, option)
 import Options.Applicative
-import System.IO
 import Data.Aeson
 import System.Random
-import GHC.Generics
 import GHC.Stack
-import Control.Exception
 import System.FilePath
 import Text.Read
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
-import qualified Data.Map.Lazy as ML
-import qualified Data.HashMap.Strict as HM
-import qualified Data.HashSet as HS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
-import qualified Data.Vector.Unboxed as VU
-import qualified Data.Vector.Generic as VG
-import qualified Text.PrettyPrint.Leijen.Text as PP
 import Data.List
 import Data.Maybe
-import Data.Foldable as Foldable
-import Data.Hashable
-import Control.Concurrent
-import Control.Concurrent.Map
-import Data.List.Split
-import qualified Codec.Serialise as CBOR
-import qualified SimplIR.Format.TrecRunFile as SimplirRun
-
 import System.Directory
+import Data.Char
 
-
-
--- import CAR.Retrieve as Retrieve
--- import qualified CAR.RunFile as CarRun
--- import CAR.Utils
--- import GridFeatures
-
-import qualified SimplIR.SimpleIndex as Index
+import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import qualified SimplIR.FeatureSpace as F
-import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
+import SimplIR.FeatureSpace (FeatureVec)
 import SimplIR.FeatureSpace.Normalise
 import SimplIR.Intern
 
 import qualified SimplIR.Format.QRel as QRel
-import qualified SimplIR.Ranking as Ranking
-
-import Control.Monad
-
 
 import TrainAndSave
 
 import Debug.Trace  as Debug
-import CAR.Types (ParagraphId)
 import CAR.ToolVersion (execParser')
 
 type NumResults = Int
@@ -216,12 +182,13 @@ noQrelInfo = QrelInfo { qrelData = []
 
 
 createModelEnvelope :: (Model f ph -> Model f ph)
+                    -> Maybe String
                     -> Maybe MiniBatchParams
                     -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
                     -> (Maybe Bool -> ModelEnvelope f ph)
-createModelEnvelope modelConv minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
+createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
     (\useCv someModel' -> 
         let trainedModel = modelConv someModel'
         in RankLipsModel{..}
@@ -247,22 +214,24 @@ opts = subparser
 
     doTrain' =
         f <$> featureParamsParser
-          <*> option str (long "output-prefix" <> short 'o' <> help "directory and file prefix to write output to. (directories must exist)" <> metavar "OUT")     
+          <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
+          <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
           <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )
-          <*> option str (long "model" <> short 'm' <> help "file where model parameters will be written to" <> metavar "FILE" )
+          <*> option str (long "experiment" <> short 'e' <> help "experiment name (will be used as part of filename)" <> metavar "FILE" )
           <*> (minibatchParser <|> pure defaultMiniBatchParams)
           <*> (flag False True ( long "train-cv" <> help "Also train with 5-fold cross validation"))
           <*> (flag False True ( long "z-score" <> help "Z-score normalize features"))
           <*> convergenceParamParser
-     
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> MiniBatchParams -> Bool -> Bool -> ConvergenceDiagParams-> IO()
-        f fparams@FeatureParams{..} outputFilePrefix qrelFile modelFile miniBatchParams includeCv useZscore convergenceParams = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> ConvergenceDiagParams-> IO()
+        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore convergenceParams = do
             dirFeatureFiles <- listDirectory featureRunsDirectory
+            createDirectoryIfMissing True outputDir
             let features' = case features of
                                 [] -> dirFeatureFiles
                                 fs -> fs 
-            doTrain (fparams{features=features'}) outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZscore convergenceParams
+                outputFilePrefix = outputDir </> outputPrefix
+            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore convergenceParams
 
     doPredict' =
         f <$> featureParamsParser
@@ -380,7 +349,7 @@ doTrain :: FeatureParams
             -> Bool
             -> ConvergenceDiagParams
             -> IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile miniBatchParams includeCv useZScore convergenceParams = do
+doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore convergenceParams = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -412,14 +381,6 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
                                     | (doc, feat) <- list    
                                     ]
 
-{-
-                        modelConv (SomeModel (model :: Model Feat ph)) =
-                            let modelVector :: FeatureVec Feat ph Double
-                                modelVector = getWeightVec $ modelWeights' model
-                                denormModelVector =  (denormWeights zNorm) modelVector
-                                denormModel = Model $ WeightVec denormModelVector
-                            in SomeModel denormModel
--}
                         modelConv (Model (WeightVec weights)) = Model (WeightVec $ denormWeights zNorm weights)
 
                     in (featureDataListZscore, createModelEnvelope modelConv)
@@ -431,9 +392,9 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix modelFile qrelFile mini
 
         evalCutoff = (EvalCutoffAt 100)
 
-        modelEnvelope = createModelEnvelope' (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
 
-    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelFile modelEnvelope
+    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelEnvelope
 
 
 train :: Bool
@@ -444,10 +405,9 @@ train :: Bool
       -> ConvergenceDiagParams
       -> EvalCutoff
       -> FilePath
-      -> FilePath
       -> (Maybe Bool -> Model Feat ph -> RankLipsModel Feat ph)
       -> IO()
-train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelFile modelEnvelope =  do
+train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
         !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
         totalElems = getSum . foldMap ( Sum . length ) $ allData
@@ -468,7 +428,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCu
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
     trainMe includeCv miniBatchParams convergenceDiagParams evalCutoff
-            gen0 allData fspace metric outputFilePrefix modelFile modelEnvelope
+            gen0 allData fspace metric outputFilePrefix "" modelEnvelope
 
 
 
@@ -564,4 +524,4 @@ head' [] = error $ "head': empty list"
 
 
 main :: IO ()
-main = join $ execParser' 1 (helper <*> opts) mempty
+main = join $ execParser $ info (helper <*> opts) mempty

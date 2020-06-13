@@ -68,11 +68,12 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
                                        , useZscore :: Maybe Bool
                                        , useCv :: Maybe Bool
+                                       , experimentName :: Maybe String
                                        }
   deriving (Generic, ToJSON)
 
 defaultRankLipsModel :: Model f s  -> RankLipsModel f s
-defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing
+defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 data SomeRankLipsModel f where 
@@ -87,6 +88,7 @@ instance (Ord f, Read f, Show f) => FromJSON (SomeRankLipsModel f) where
     convergenceDiagParameters <- o .: "convergenceDiagParameters"
     useZscore <- o .: "useZscore"
     useCv <- o .: "useCv"
+    experimentName <- o .: "experimentName"
     return $ SomeRankLipsModel $ RankLipsModel {..}
 
 
@@ -116,7 +118,7 @@ trainMe :: forall f s. (Ord f, Show f)
         -> FilePath
         -> (Maybe Bool -> Model f s -> RankLipsModel f s)
         -> IO ()
-trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix modelFile modelEnvelope = do
+trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
           -- train me!
           let nRestarts = 5
               nFolds = 5
@@ -147,14 +149,14 @@ trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspac
               (model, trainScore) = Debug.trace ("full Train - best Model") 
                                   $    bestModel $  fullRestarts
               fullActions = Debug.trace ("full Train - dump Model")
-                          $ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix modelFile (modelEnvelope (Just False))
+                          $ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName (modelEnvelope (Just False))
 
 
           putStrLn "CV Train"
           if includeCv
             then do
               foldRestartResults' <- withStrategyIO strat foldRestartResults
-              let cvActions = dumpKFoldModelsAndRankings foldRestartResults' metric outputFilePrefix modelFile (modelEnvelope (Just True))
+              let cvActions = dumpKFoldModelsAndRankings foldRestartResults' metric outputFilePrefix experimentName (modelEnvelope (Just True))
               putStrLn "concurrently: CV Train"
               mapConcurrentlyL_ 24 id $ fullActions ++ cvActions
             else
@@ -232,7 +234,7 @@ dumpKFoldModelsAndRankings
     -> FilePath
     -> ModelEnvelope f s
     -> [IO ()]
-dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix modelFile modelEnvelope =
+dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experimentName modelEnvelope =
     let bestPerFold' :: Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
         bestPerFold' = bestPerFold foldRestartResults
 
@@ -245,7 +247,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix modelFile 
         _testScore = metric testRanking
 
 --         dumpAll = [ do storeRankingData outputFilePrefix ranking metric modelDesc
---                        storeModelData outputFilePrefix modelFile model trainScore modelDesc
+--                        storeModelData outputFilePrefix experimentName model trainScore modelDesc
 --                   | (foldNo, ~(testData, restartModels))  <- zip [0..] $ toList foldRestartResults
 --                   , (restartNo, ~(model, trainScore)) <- zip [0..] restartModels
 --                   , let ranking = rerankRankings' model testData
@@ -256,7 +258,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix modelFile 
 
         dumpBest =
             [ do storeRankingData outputFilePrefix ranking metric modelDesc
-                 storeModelData outputFilePrefix modelFile model trainScore modelDesc modelEnvelope
+                 storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope
             | (foldNo, (testData,  ~(model, trainScore)))  <- zip [0 :: Integer ..]
                                                               $ toList bestPerFold'
             , let ranking = rerankRankings' model testData
@@ -279,11 +281,11 @@ dumpFullModelsAndRankings
     -> FilePath
     -> ModelEnvelope f ph
     -> [IO()]
-dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix modelFile modelEnvelope =
+dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope =
     let modelDesc = "train"
         trainRanking = rerankRankings' model trainData
     in [ storeRankingData outputFilePrefix trainRanking metric modelDesc
-       , storeModelData outputFilePrefix modelFile model trainScore modelDesc modelEnvelope
+       , storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope
        ]
 
 
@@ -313,9 +315,9 @@ storeModelData :: (Show f, Ord f)
                -> [Char]
                -> ModelEnvelope f ph
                -> IO ()
-storeModelData outputFilePrefix modelFile model trainScore modelDesc modelEnvelope = do
+storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope = do
   putStrLn $ "Model "++modelDesc++ " train metric "++ (show trainScore) ++ " MAP."
-  let modelFile' = outputFilePrefix++modelFile++"-model-"++modelDesc++".json"
+  let modelFile' = outputFilePrefix++experimentName++"-model-"++modelDesc++".json"
   BSL.writeFile modelFile' $ Data.Aeson.encode $ modelEnvelope model
   putStrLn $ "Written model "++modelDesc++ " to file "++ (show modelFile') ++ " ."
 
