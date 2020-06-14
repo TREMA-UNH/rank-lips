@@ -103,8 +103,8 @@ data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams
   deriving (Generic, ToJSON, FromJSON)
 
 data RankLipsModelSerialized f = RankLipsModelSerialized { rankLipsTrainedModel :: SomeModel f
-                                                            , rankLipsMetaData :: [RankLipsMetaField]
-                                                            }
+                                                          , rankLipsMetaData :: [RankLipsMetaField]
+                                                          }
   deriving (Generic, ToJSON, FromJSON)
 
 data SomeRankLipsModel f where 
