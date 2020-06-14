@@ -159,7 +159,7 @@ trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspac
                   infoStr = show foldIdx
 
               foldRestartResults :: Folds (M.Map  Q [(DocId, FeatureVec f s Double, Rel)], [(Model f s, Double)])
-              foldRestartResults = kFolds trainFun trainData folds
+              foldRestartResults = trainKFolds trainFun trainData folds
 
               strat :: Strategy (Folds (a, [(Model f s, Double)]))
               strat = parTraversable (evalTuple2 r0 (parTraversable rdeepseq))
