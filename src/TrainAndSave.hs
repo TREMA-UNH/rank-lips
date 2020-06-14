@@ -85,22 +85,25 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , evalCutoffOpt :: Maybe EvalCutoff
                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
                                        , useZscore :: Maybe Bool
-                                       , useCv :: Maybe Bool
+                                       , cvFold :: Maybe Integer
+                                       , heldoutQueries :: Maybe [SimplirRun.QueryId]
                                        , experimentName :: Maybe String
                                        }
-
+  
 
 defaultRankLipsModel :: Model f s  -> RankLipsModel f s
-defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing
+defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
                        | RankLipsEvalCutoff EvalCutoff
                        | RankLipsConvergenceDiagParams ConvergenceDiagParams
                        | RankLipsUseZScore Bool
-                       | RankLipsIsCrossValidated Bool
+                       | RankLipsCVFold Integer
+                       | RankLipsHeldoutQueries [SimplirRun.QueryId]
+                       | RankLipsIsFullTrain
                        | RankLipsExperimentName String
-  deriving (Generic, ToJSON, FromJSON)
+  deriving (Show, Generic, ToJSON, FromJSON)
 
 data RankLipsModelSerialized f = RankLipsModelSerialized { rankLipsTrainedModel :: SomeModel f
                                                           , rankLipsMetaData :: [RankLipsMetaField]
@@ -138,7 +141,7 @@ trainMe :: forall f s. (Ord f, ToJSONKey f, Show f)
         -> ScoringMetric IsRelevant Q
         -> FilePath
         -> FilePath
-        -> (Maybe Bool -> Model f s -> RankLipsModelSerialized f)
+        -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model f s -> RankLipsModelSerialized f)
         -> IO ()
 trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
           -- train me!
@@ -171,14 +174,14 @@ trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspac
               (model, trainScore) = Debug.trace ("full Train - best Model") 
                                   $    bestModel $  fullRestarts
               fullActions = Debug.trace ("full Train - dump Model")
-                          $ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName (modelEnvelope (Just False))
+                          $ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope
 
 
           putStrLn "CV Train"
           if includeCv
             then do
               foldRestartResults' <- withStrategyIO strat foldRestartResults
-              let cvActions = dumpKFoldModelsAndRankings foldRestartResults' metric outputFilePrefix experimentName (modelEnvelope (Just True))
+              let cvActions = dumpKFoldModelsAndRankings foldRestartResults' metric outputFilePrefix experimentName modelEnvelope
               putStrLn "concurrently: CV Train"
               mapConcurrentlyL_ 24 id $ fullActions ++ cvActions
             else
@@ -254,7 +257,7 @@ dumpKFoldModelsAndRankings
     -> ScoringMetric IsRelevant Q
     -> FilePath
     -> FilePath
-    -> ModelEnvelope f s
+    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f s)
     -> [IO ()]
 dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experimentName modelEnvelope =
     let bestPerFold' :: Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
@@ -280,7 +283,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experiment
 
         dumpBest =
             [ do storeRankingData outputFilePrefix ranking metric modelDesc
-                 storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope
+                 storeModelData outputFilePrefix experimentName model trainScore modelDesc (modelEnvelope (Just foldNo) (Just $  M.keys testData))
             | (foldNo, (testData,  ~(model, trainScore)))  <- zip [0 :: Integer ..]
                                                               $ toList bestPerFold'
             , let ranking = rerankRankings' model testData
@@ -301,13 +304,13 @@ dumpFullModelsAndRankings
     -> ScoringMetric IsRelevant SimplirRun.QueryId
     -> FilePath
     -> FilePath
-    -> ModelEnvelope f ph
+    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
     -> [IO()]
 dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope =
     let modelDesc = "train"
         trainRanking = rerankRankings' model trainData
     in [ storeRankingData outputFilePrefix trainRanking metric modelDesc
-       , storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope
+       , storeModelData outputFilePrefix experimentName model trainScore modelDesc (modelEnvelope Nothing Nothing)
        ]
 
 

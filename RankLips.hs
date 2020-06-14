@@ -223,7 +223,7 @@ noQrelInfo = QrelInfo { qrelData = []
                       }
 
 
-deserializeRankLipsModel ::  RankLipsModelSerialized f -> SomeRankLipsModel f
+deserializeRankLipsModel ::  Show RankLipsMetaField => RankLipsModelSerialized f -> SomeRankLipsModel f
 deserializeRankLipsModel RankLipsModelSerialized{..} =
     case rankLipsTrainedModel of
       SomeModel trainedModel -> 
@@ -235,8 +235,12 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
             RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
             RankLipsEvalCutoff params -> rlm {evalCutoffOpt = Just params}
             RankLipsUseZScore flag -> rlm {useZscore = Just flag}
-            RankLipsIsCrossValidated flag -> rlm {useCv = Just flag}
+            RankLipsCVFold fold -> rlm {cvFold = Just fold}
+            RankLipsIsFullTrain -> rlm {cvFold = Nothing}
             RankLipsExperimentName name -> rlm {experimentName = Just name}
+            RankLipsHeldoutQueries queries -> rlm {heldoutQueries = Just queries}
+            RankLipsConvergenceDiagParams params -> rlm {convergenceDiagParameters = Just params}
+            x -> error $ "Don't know how to read metadata field "<> (show x)
 
 
 
@@ -247,9 +251,9 @@ createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
-                    -> (Maybe Bool -> ModelEnvelope f ph)
+                    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
 createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
-    (\useCv someModel' -> 
+    (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
             rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
@@ -257,6 +261,8 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt co
                                          , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
                                          , fmap RankLipsUseZScore useZscore
                                          , fmap RankLipsExperimentName experimentName
+                                         , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
+                                         , fmap RankLipsHeldoutQueries heldOutQueries
                                          ]
         in RankLipsModelSerialized{..}
     )
@@ -471,7 +477,7 @@ train :: Bool
       -> ConvergenceDiagParams
       -> EvalCutoff
       -> FilePath
-      -> (Maybe Bool -> Model Feat ph -> RankLipsModelSerialized Feat)
+      -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model Feat ph -> RankLipsModelSerialized Feat)
       -> IO()
 train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
