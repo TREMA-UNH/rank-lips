@@ -223,6 +223,23 @@ noQrelInfo = QrelInfo { qrelData = []
                       }
 
 
+deserializeRankLipsModel ::  RankLipsModelSerialized f -> SomeRankLipsModel f
+deserializeRankLipsModel RankLipsModelSerialized{..} =
+    case rankLipsTrainedModel of
+      SomeModel trainedModel -> 
+        let    rankLipsModel  = foldl readMeta (defaultRankLipsModel trainedModel) rankLipsMetaData
+        in SomeRankLipsModel rankLipsModel
+  where readMeta :: RankLipsModel f ph -> RankLipsMetaField -> RankLipsModel f ph
+        readMeta rlm metafield =
+          case metafield of
+            RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
+            RankLipsEvalCutoff params -> rlm {evalCutoffOpt = Just params}
+            RankLipsUseZScore flag -> rlm {useZscore = Just flag}
+            RankLipsIsCrossValidated flag -> rlm {useCv = Just flag}
+            RankLipsExperimentName name -> rlm {experimentName = Just name}
+
+
+
 
 createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe String
