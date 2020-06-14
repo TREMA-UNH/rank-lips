@@ -23,13 +23,16 @@
 
 module TrainAndSave where
 
-import Data.Aeson
+
+import qualified Data.Aeson as Aeson
+import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey, (.:))
 
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
+
 import Data.Function
 import Data.Bifunctor
 import System.Random
@@ -41,7 +44,6 @@ import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
 
--- import qualified CAR.RunFile as CAR.RunFile
 import qualified SimplIR.Format.QRel as QRel
 import qualified SimplIR.Ranking as Ranking
 import SimplIR.TrainUtils
@@ -56,7 +58,7 @@ type Q = SimplirRun.QueryId
 type DocId = SimplirRun.DocumentName
 type Rel = IsRelevant
 type TrainData f s = M.Map Q [(DocId, FeatureVec f s Double, Rel)]
--- type ReturnWithModelDiagnostics a = (a, [(String, Model, Double)])
+
 type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)],
                                     [(Model f s, Double)])
 type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
@@ -80,8 +82,8 @@ data SomeRankLipsModel f where
     SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
 
 
-instance (Ord f, Read f, Show f) => FromJSON (SomeRankLipsModel f) where
-  parseJSON = withObject "rank-lips model" $ \o -> do
+instance (Ord f, FromJSONKey f, Show f) => FromJSON (SomeRankLipsModel f) where
+  parseJSON = Aeson.withObject "rank-lips model" $ \o -> do
     SomeModel trainedModel <- o .: "trainedModel"
     minibatchParamsOpt <- o .: "minibatchParamsOpt"
     evalCutoffOpt <- o .: "evalCutoffOpt"
@@ -93,19 +95,22 @@ instance (Ord f, Read f, Show f) => FromJSON (SomeRankLipsModel f) where
 
 
 
-loadRankLipsModel :: (Read f, Ord f, Show f) => FilePath -> IO (SomeRankLipsModel f)
+loadRankLipsModel :: (FromJSONKey f, Ord f, Show f) => FilePath -> IO (SomeRankLipsModel f)
 loadRankLipsModel modelFile = do
-  modelOpt <- Data.Aeson.eitherDecode  <$> BSL.readFile modelFile 
+  modelOpt <- Aeson.eitherDecode  <$> BSL.readFile modelFile 
   return $
     case modelOpt of
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
       Right model -> model
 
 
+
 type ModelEnvelope f s = Model f s -> RankLipsModel f s
 
 
-trainMe :: forall f s. (Ord f, Show f)
+-- --------------------------------------------
+
+trainMe :: forall f s. (Ord f, ToJSONKey f, Show f)
         => Bool
         -> MiniBatchParams
         -> ConvergenceDiagParams
@@ -172,7 +177,7 @@ data ConvergenceDiagParams = ConvergenceDiagParams { convergenceThreshold :: Dou
 
 
 trainWithRestarts
-    :: forall f s. (Show f)
+    :: forall f s. (ToJSONKey f, Show f)
     => MiniBatchParams
     -> ConvergenceDiagParams
     -> EvalCutoff
@@ -227,7 +232,7 @@ bestRankingPerFold bestPerFold' =
 
 
 dumpKFoldModelsAndRankings
-    :: forall f s. (Ord f, Show f)
+    :: forall f s. (Ord f, ToJSONKey f)
     => FoldRestartResults f s
     -> ScoringMetric IsRelevant Q
     -> FilePath
@@ -273,7 +278,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experiment
 
 
 dumpFullModelsAndRankings
-    :: forall f ph. (Ord f, Show f)
+    :: forall f ph. (Ord f, ToJSONKey f)
     => M.Map Q [(DocId, FeatureVec f ph Double, Rel)]
     -> (Model f ph, Double)
     -> ScoringMetric IsRelevant SimplirRun.QueryId
@@ -307,7 +312,7 @@ l2rRankingToRankEntries methodName rankings =
 
 
 -- Train model on all data
-storeModelData :: (Show f, Ord f)
+storeModelData :: (ToJSONKey f, Ord f)
                => FilePath
                -> FilePath
                -> Model f ph
@@ -318,15 +323,15 @@ storeModelData :: (Show f, Ord f)
 storeModelData outputFilePrefix experimentName model trainScore modelDesc modelEnvelope = do
   putStrLn $ "Model "++modelDesc++ " train metric "++ (show trainScore) ++ " MAP."
   let modelFile' = outputFilePrefix++experimentName++"-model-"++modelDesc++".json"
-  BSL.writeFile modelFile' $ Data.Aeson.encode $ modelEnvelope model
+  BSL.writeFile modelFile' $ Aeson.encode $ modelEnvelope model
   putStrLn $ "Written model "++modelDesc++ " to file "++ (show modelFile') ++ " ."
 
 
-loadOldModelData :: (Show f, Read f, Ord f)
+loadOldModelData :: (Show f, FromJSONKey f, Ord f)
                => FilePath
                -> IO (SomeModel f)
 loadOldModelData modelFile  = do
-  modelOpt <- Data.Aeson.eitherDecode    <$> BSL.readFile modelFile 
+  modelOpt <- Aeson.eitherDecode    <$> BSL.readFile modelFile 
   return $
     case modelOpt of
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg

@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -29,7 +30,7 @@ import Data.Aeson
 import System.Random
 import GHC.Stack
 import System.FilePath
-import Text.Read
+-- import Text.Read
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -38,7 +39,6 @@ import qualified Data.Text as T
 import Data.List
 import Data.Maybe
 import System.Directory
-import Data.Char
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import SimplIR.LearningToRank
@@ -46,24 +46,77 @@ import SimplIR.LearningToRankWrapper
 import qualified SimplIR.FeatureSpace as F
 import SimplIR.FeatureSpace (FeatureVec)
 import SimplIR.FeatureSpace.Normalise
-import SimplIR.Intern
 
 import qualified SimplIR.Format.QRel as QRel
 
 import TrainAndSave
 
-import Debug.Trace  as Debug
-import CAR.ToolVersion (execParser')
+-- import Debug.Trace  as Debug
+import Data.Functor.Contravariant (Contravariant(contramap))
 
 type NumResults = Int
 
 
-newtype Feat = Feat { featureName :: T.Text }
-    deriving (Eq, Ord )
+-- newtype FeatureName = FeatureName { getFeatureName :: T.Text }
+--                     deriving stock (Ord, Eq, Show, Read, Generic)
+--                     deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
+
+
+
+data FeatName = FeatNameInputRun { fRunFile :: FilePath
+                                 , featureVariant:: FeatureVariant
+                                 }
+    deriving (Show, Ord, Eq)
+
+encodeFeatureName :: FeatName -> String
+encodeFeatureName FeatNameInputRun{..} = fRunFile <> "-" <> show featureVariant
+
+instance ToJSON FeatName where
+    toJSON featNameInputRun = toJSON $ encodeFeatureName featNameInputRun
+
+instance ToJSONKey FeatName where
+    toJSONKey =
+        contramap encodeFeatureName toJSONKey
+
+
+parseFeatName :: T.Text -> FeatName
+parseFeatName str =
+        head' $ mapMaybe matchEnd $ featureVariant'
+      where 
+          matchEnd :: (FeatureVariant, T.Text) -> Maybe FeatName
+          matchEnd (fvariant, fvariant') =
+                if fvariant' `T.isSuffixOf` str
+                    then 
+                        let fRunFileName = T.take (T.length fvariant' +1) str
+                        in Just $ FeatNameInputRun (T.unpack $ fRunFileName) fvariant  --- +1 because of added hyphen
+                    else Nothing
+
+          featureVariant' :: [(FeatureVariant, T.Text)]    
+          !featureVariant' = [(fv, T.pack $ show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
+
+instance FromJSON FeatName where
+    parseJSON (Data.Aeson.String str) = 
+        return $ parseFeatName str
+
+
+    parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
+
+instance FromJSONKey FeatName where
+    fromJSONKey =
+        FromJSONKeyText parseFeatName
+
+
+newtype Feat = Feat { featureName :: FeatName}
+    deriving stock (Eq, Ord)
+    deriving newtype (FromJSON, FromJSONKey, ToJSON, ToJSONKey )
 instance Show Feat where
     show = show . featureName
-instance Read Feat where
-    readPrec = fmap Feat readPrec
+-- instance Read Feat where
+--     readPrec = fmap Feat readPrec
+
+augmentFname :: FeatureVariant -> FilePath -> Feat
+augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
+
 
 
 data FeatureVariant = FeatScore | FeatRecipRank
@@ -136,12 +189,12 @@ convertFeatureNames featureVariants features =
                 , ft <- featureVariants
                 ]
 
-revertFeatureFileNames :: [Feat] -> [FilePath]
-revertFeatureFileNames features =
-    fmap revertFeat features
-  where revertFeat :: Feat -> FilePath
-        revertFeat (Feat name) =
-            T.unpack $ T.dropEnd 1 $  T.dropWhileEnd(/= '-') name
+-- revertFeatureFileNames :: [Feat] -> [FilePath]
+-- revertFeatureFileNames features =
+--     fmap revertFeat features
+--   where revertFeat :: Feat -> FilePath
+--         revertFeat (Feat name) =
+--             T.unpack $ T.dropEnd 1 $  T.dropWhileEnd(/= '-') name
 
 featureSet :: FeatureParams -> FeatureSet
 featureSet FeatureParams{..} =
@@ -156,9 +209,9 @@ featureSet FeatureParams{..} =
             ]
           where produceFeature :: FeatureVariant -> (Feat, Double)
                 produceFeature FeatScore = 
-                    ((augmentFname FeatScore fname), documentScore)
+                    ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
                 produceFeature FeatRecipRank = 
-                    ((augmentFname FeatRecipRank fname), (1.0/(realToFrac documentRank)))  
+                    ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
     in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
 
 
@@ -173,7 +226,7 @@ data QrelInfo = QrelInfo { qrelData :: [QRel.Entry SimplirRun.QueryId SimplirRun
 noQrelInfo :: QrelInfo                         
 noQrelInfo = QrelInfo { qrelData = []
                       , qrelMap = mempty
-                      , lookupQrel = (\rel q d -> rel)
+                      , lookupQrel = (\rel _q _d -> rel)
                       , totalRels = mempty
                       , metric = const 0.0
                       , metricName = "-"
@@ -209,7 +262,7 @@ opts = subparser
         f <$> optional (option str (short 'v'))
       where 
           f :: Maybe String -> IO()
-          f v = putStrLn "Rank-lips version 1.1"
+          f _v = putStrLn "Rank-lips version 1.1"
         
 
     doTrain' =
@@ -241,10 +294,6 @@ opts = subparser
       where
         f :: FeatureParams ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
         f fparams@FeatureParams{..} outputFilePrefix qrelFileOpt modelFile = do
-            -- Todo: Load features from Model
-            
-            -- sm@(SomeModel model) <- loadModelData modelFile
-            --                         :: IO (SomeModel Feat)
 
             SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- loadRankLipsModel modelFile
 
@@ -261,9 +310,12 @@ opts = subparser
                 $ fail $ "Missing files for features (which are defined in model file): "
                              ++ show missingFeatures
 
-            let revertedModelFeatureFiles = revertFeatureFileNames modelFeatureFiles
+            let revertedModelFeatureFiles =  mapMaybe extractFeatFiles modelFeatureFiles
             doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix model qrelFileOpt
-
+          where
+              extractFeatFiles :: Feat -> Maybe FilePath
+              extractFeatFiles (Feat FeatNameInputRun{..}) = Just fRunFile
+              extractFeatFiles _ = Nothing
 
     doConvertModel' =
         convertOldModel
@@ -313,7 +365,7 @@ doPredict :: forall ph
             -> Maybe FilePath 
             -> IO () 
 doPredict featureParams@FeatureParams{..} outputFilePrefix model qrelFileOpt  = do
-    let FeatureSet {featureNames=featureNames, produceFeatures=produceFeatures}
+    let FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
          = featureSet featureParams
 
     let fspace = modelFeatures model
@@ -432,8 +484,6 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCu
 
 
 
-augmentFname :: FeatureVariant -> FilePath -> Feat
-augmentFname featureVariant fname = Feat $ T.pack $ fname <> "-" <> show featureVariant
 
 loadRunFiles :: FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry])] 
 loadRunFiles prefix inputRuns = do
@@ -466,6 +516,17 @@ augmentWithQrelsList_ lookupQrel qData =
                     (doc, feats, lookupQrel query doc)
 
 
+internFeatures :: F.FeatureSpace Feat ph -> [(Feat, d)] -> [(Feat, d)]
+internFeatures fspace features =
+    fmap internF features
+  where 
+    internF (f,v) =  
+      let f' = F.internFeatureName fspace f
+      in case f' of
+            Just f'' -> (f'', v)
+            Nothing -> error $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
+
+
 runFilesToFeatureVectorsMap :: forall ph . F.FeatureSpace Feat ph 
                           -> (FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)])
                           -> [(FilePath, [SimplirRun.RankingEntry])] 
@@ -476,7 +537,7 @@ runFilesToFeatureVectorsMap fspace produceFeatures runData =
                  $ [ (queryId, 
                         M.fromListWith (<>)
                         [(documentName 
-                         , produceFeatures fname entry
+                         , internFeatures fspace $ produceFeatures fname entry
                         )]
                       )
                     | (fname, rankingEntries) <- runData

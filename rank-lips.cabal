@@ -35,7 +35,7 @@ library
                        deepseq,
                        parallel,
                        serialise,
-                       aeson,
+                       aeson >= 1.4,
 
                        trec-car-types,
                        trec-car-tools,
