@@ -75,9 +75,10 @@ instance ToJSON FeatName where
     toJSON featNameInputRun = toJSON $ encodeFeatureName featNameInputRun
 
 instance ToJSONKey FeatName where
-    toJSONKey =
-        contramap encodeFeatureName toJSONKey
+    toJSONKey = contramap encodeFeatureName toJSONKey
 
+instance FromJSONKey FeatName where
+    fromJSONKey = FromJSONKeyText parseFeatName
 
 parseFeatName :: T.Text -> FeatName
 parseFeatName str =
@@ -87,12 +88,11 @@ parseFeatName str =
           matchEnd (fvariant, fvariant') =
                 if fvariant' `T.isSuffixOf` str
                     then 
-                        let fRunFileName = T.take (T.length fvariant' +1) str
-                        in Just $ FeatNameInputRun (T.unpack $ fRunFileName) fvariant  --- +1 because of added hyphen
+                        fmap (\s -> FeatNameInputRun {fRunFile = T.unpack s, featureVariant = fvariant} ) $  T.stripSuffix fvariant' str
                     else Nothing
 
           featureVariant' :: [(FeatureVariant, T.Text)]    
-          !featureVariant' = [(fv, T.pack $ show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
+          !featureVariant' = [(fv, T.pack $ "-" <> show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
 
 instance FromJSON FeatName where
     parseJSON (Data.Aeson.String str) = 
@@ -100,10 +100,6 @@ instance FromJSON FeatName where
 
 
     parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
-
-instance FromJSONKey FeatName where
-    fromJSONKey =
-        FromJSONKeyText parseFeatName
 
 
 newtype Feat = Feat { featureName :: FeatName}
@@ -189,12 +185,6 @@ convertFeatureNames featureVariants features =
                 , ft <- featureVariants
                 ]
 
--- revertFeatureFileNames :: [Feat] -> [FilePath]
--- revertFeatureFileNames features =
---     fmap revertFeat features
---   where revertFeat :: Feat -> FilePath
---         revertFeat (Feat name) =
---             T.unpack $ T.dropEnd 1 $  T.dropWhileEnd(/= '-') name
 
 featureSet :: FeatureParams -> FeatureSet
 featureSet FeatureParams{..} =
@@ -244,7 +234,9 @@ createModelEnvelope :: (Model f ph -> Model f ph)
 createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
     (\useCv someModel' -> 
         let trainedModel = modelConv someModel'
-        in RankLipsModel{..}
+            rankLipsTrainedModel = SomeModel trainedModel
+            rankLipsMetaData = [RankLipsMiniBatch $ fromJust minibatchParamsOpt ]  -- ToDo convert optional fields intoMetaDataFields
+        in RankLipsModelSerialized{..}
     )
 
 
@@ -295,7 +287,7 @@ opts = subparser
         f :: FeatureParams ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
         f fparams@FeatureParams{..} outputFilePrefix qrelFileOpt modelFile = do
 
-            SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- loadRankLipsModel modelFile
+            SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
 
             let model = trainedModel lipsModel
                 fspace = modelFeatures model  
@@ -457,7 +449,7 @@ train :: Bool
       -> ConvergenceDiagParams
       -> EvalCutoff
       -> FilePath
-      -> (Maybe Bool -> Model Feat ph -> RankLipsModel Feat ph)
+      -> (Maybe Bool -> Model Feat ph -> RankLipsModelSerialized Feat)
       -> IO()
 train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
@@ -560,9 +552,12 @@ runFilesToFeatureVectorsMap fspace produceFeatures runData =
 
 convertOldModel :: FilePath -> FilePath -> IO()
 convertOldModel oldModelFile newRankLipsModelFile = do
-  SomeModel model <- loadOldModelData @Feat oldModelFile
-  let lipsModel = defaultRankLipsModel model
-  BSL.writeFile newRankLipsModelFile $ Data.Aeson.encode $ lipsModel
+    undefined
+
+-- convertOldModel oldModelFile newRankLipsModelFile = do
+--   SomeModel model <- loadOldModelData @Feat oldModelFile
+--   let lipsModel = defaultRankLipsModel model
+--   BSL.writeFile newRankLipsModelFile $ Data.Aeson.encode $ lipsModel
 
 
 

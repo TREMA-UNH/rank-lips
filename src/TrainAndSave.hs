@@ -25,8 +25,7 @@ module TrainAndSave where
 
 
 import qualified Data.Aeson as Aeson
-import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey, (.:))
-
+import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
@@ -64,6 +63,23 @@ type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel
 type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
+
+-- data RankLipsModel f s = RankLipsModel { --trainedModel :: Model f s
+--                                        , minibatchParamsOpt :: Maybe MiniBatchParams
+--                                        , evalCutoffOpt :: Maybe EvalCutoff
+--                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
+--                                        , useZscore :: Maybe Bool
+--                                         -- , useCv :: Maybe Bool
+--                                        , experimentName :: Maybe String
+--                                        }
+
+
+-- RankLipsModel {
+--   trainedModel :: Model f s
+--   , useCv :: Maybe Bool
+
+-- }                  
+
 data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , minibatchParamsOpt :: Maybe MiniBatchParams
                                        , evalCutoffOpt :: Maybe EvalCutoff
@@ -72,40 +88,58 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , useCv :: Maybe Bool
                                        , experimentName :: Maybe String
                                        }
-  deriving (Generic, ToJSON)
+
 
 defaultRankLipsModel :: Model f s  -> RankLipsModel f s
 defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing
+
+
+data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
+                       | RankLipsEvalCutoff EvalCutoff
+                       | RankLipsConvergenceDiagParams ConvergenceDiagParams
+                       | RankLipsUseZScore Bool
+                       | RankLipsIsCrossValidated Bool
+                       | RankLipsExperimentName String
+  deriving (Generic, ToJSON, FromJSON)
+
+data RankLipsModelSerialized f = RankLipsModelSerialized { rankLipsTrainedModel :: SomeModel f
+                                                            , rankLipsMetaData :: [RankLipsMetaField]
+                                                            }
+  deriving (Generic, ToJSON, FromJSON)
+
+deserializeRankLipsModel ::  RankLipsModelSerialized f -> SomeRankLipsModel f
+deserializeRankLipsModel RankLipsModelSerialized{..} =
+    case rankLipsTrainedModel of
+      SomeModel trainedModel -> 
+        let    rankLipsModel  = foldl readMeta (defaultRankLipsModel trainedModel) rankLipsMetaData
+        in SomeRankLipsModel rankLipsModel
+  where readMeta :: RankLipsModel f ph -> RankLipsMetaField -> RankLipsModel f ph
+        readMeta rlm metafield =
+          case metafield of
+            RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
+            RankLipsEvalCutoff params -> rlm {evalCutoffOpt = Just params}
+            RankLipsUseZScore flag -> rlm {useZscore = Just flag}
+            RankLipsIsCrossValidated flag -> rlm {useCv = Just flag}
+            RankLipsExperimentName name -> rlm {experimentName = Just name}
+
 
 
 data SomeRankLipsModel f where 
     SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
 
 
-instance (Ord f, FromJSONKey f, Show f) => FromJSON (SomeRankLipsModel f) where
-  parseJSON = Aeson.withObject "rank-lips model" $ \o -> do
-    SomeModel trainedModel <- o .: "trainedModel"
-    minibatchParamsOpt <- o .: "minibatchParamsOpt"
-    evalCutoffOpt <- o .: "evalCutoffOpt"
-    convergenceDiagParameters <- o .: "convergenceDiagParameters"
-    useZscore <- o .: "useZscore"
-    useCv <- o .: "useCv"
-    experimentName <- o .: "experimentName"
-    return $ SomeRankLipsModel $ RankLipsModel {..}
 
-
-
-loadRankLipsModel :: (FromJSONKey f, Ord f, Show f) => FilePath -> IO (SomeRankLipsModel f)
+loadRankLipsModel :: (FromJSONKey f, Ord f, Show f) => FilePath -> IO (RankLipsModelSerialized f)
 loadRankLipsModel modelFile = do
-  modelOpt <- Aeson.eitherDecode  <$> BSL.readFile modelFile 
+  modelOrErr <- Aeson.eitherDecode  <$> BSL.readFile modelFile 
   return $
-    case modelOpt of
+    case modelOrErr of
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
       Right model -> model
 
 
 
-type ModelEnvelope f s = Model f s -> RankLipsModel f s
+type ModelEnvelope f s = Model f s -> RankLipsModelSerialized f
 
 
 -- --------------------------------------------
@@ -121,7 +155,7 @@ trainMe :: forall f s. (Ord f, ToJSONKey f, Show f)
         -> ScoringMetric IsRelevant Q
         -> FilePath
         -> FilePath
-        -> (Maybe Bool -> Model f s -> RankLipsModel f s)
+        -> (Maybe Bool -> Model f s -> RankLipsModelSerialized f)
         -> IO ()
 trainMe includeCv miniBatchParams convDiagParams evalCutoff gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
           -- train me!
