@@ -235,7 +235,12 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt co
     (\useCv someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
-            rankLipsMetaData = [RankLipsMiniBatch $ fromJust minibatchParamsOpt ]  -- ToDo convert optional fields intoMetaDataFields
+            rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
+                                         , fmap RankLipsEvalCutoff evalCutoffOpt
+                                         , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
+                                         , fmap RankLipsUseZScore useZscore
+                                         , fmap RankLipsExperimentName experimentName
+                                         ]
         in RankLipsModelSerialized{..}
     )
 
