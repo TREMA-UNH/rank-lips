@@ -81,6 +81,7 @@ executable rank-lips
                        time,
                        split,
                        directory,
+                       gitrev >= 1.3,
                        graph-algorithms,
                        simplir-word-embedding,
                        simplir-learning-to-rank,

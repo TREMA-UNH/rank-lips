@@ -18,9 +18,12 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 
 module Main where
 
+import Development.GitRev
 import Control.DeepSeq hiding (rwhnf)
 import Control.Monad
 import Control.Parallel.Strategies
@@ -269,6 +272,16 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt co
 
 
 
+gitMsg :: String
+gitMsg = panicMsg
+  where panicMsg =
+          concat [ "[git ", $(gitBranch), "@", $(gitHash)
+                 , " (", $(gitCommitDate), ")"
+                 , " (", $(gitCommitCount), " commits in HEAD)"
+                 , dirty, "] " ]
+        dirty | $(gitDirty) = " (uncommitted files present)"
+              | otherwise   = ""
+
 opts :: Parser (IO ())
 opts = subparser
     $  cmd "train"        doTrain'
@@ -282,8 +295,10 @@ opts = subparser
         f <$> optional (option str (short 'v'))
       where 
           f :: Maybe String -> IO()
-          f _v = putStrLn "Rank-lips version 1.1"
+          f _v = putStrLn $ "Rank-lips version 1.1 \n" <> gitMsg
         
+
+
 
     doTrain' =
         f <$> featureParamsParser
