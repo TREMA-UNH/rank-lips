@@ -50,7 +50,7 @@ cat "${OUT_DIR}/${OUT_PREFIX_TEST}-run-predict.run"
 
 echo "For comparison: TREC Eval's evaluation"
 
-${TREC_EVAL} -m map ${TEST_QREL} ${OUT_DIR}/${OUT_PREFIX_TEST}-run-predict.run
+# ${TREC_EVAL} -m map ${TEST_QREL} ${OUT_DIR}/${OUT_PREFIX_TEST}-run-predict.run
 
 
 
@@ -74,12 +74,12 @@ $bin/rank-lips train --train-cv -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e 
 
 echo "For comparison: TREC Eval's evaluation (no -c)"
 
-${TREC_EVAL} -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
+#${TREC_EVAL} -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 
 
 echo "For comparison: TREC Eval's evaluation (with -c)"
 
-${TREC_EVAL} -c -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
+#${TREC_EVAL} -c -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 
 
 ls ${OUT_DIR} | grep ${OUT_PREFIX_CV}
