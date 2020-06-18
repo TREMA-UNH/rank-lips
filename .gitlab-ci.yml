@@ -35,8 +35,9 @@ cmd-parameter-test:
   dependencies:
     - static-dist
   script:
+    - sudo apk add jq
     - |
-      export bin=$(pwd)/results
+      export bin=$(pwd)/result
       cd rank-lips-example
       ./run.sh
       rm -R out
