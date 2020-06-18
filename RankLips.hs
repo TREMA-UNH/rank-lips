@@ -318,12 +318,13 @@ opts = subparser
 
     doPredict' =
         f <$> featureParamsParser
-          <*> option str (long "output-prefix" <> short 'o' <> help "directory and file prefix to write output to." <> metavar "OUT")     
+          <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
+          <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
           <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file, if provided, test MAP scores will be reported" <> metavar "QRELS" ))
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
       where
-        f :: FeatureParams ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
-        f fparams@FeatureParams{..} outputFilePrefix qrelFileOpt modelFile = do
+        f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
+        f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile = do
 
             SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
 
@@ -340,7 +341,11 @@ opts = subparser
                 $ fail $ "Missing files for features (which are defined in model file): "
                              ++ show missingFeatures
 
-            let revertedModelFeatureFiles =  mapMaybe extractFeatFiles modelFeatureFiles
+            createDirectoryIfMissing True outputDir
+
+            let revertedModelFeatureFiles = nub $ mapMaybe extractFeatFiles modelFeatureFiles
+                outputFilePrefix = outputDir </> outputPrefix
+
             doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix model qrelFileOpt
           where
               extractFeatFiles :: Feat -> Maybe FilePath
