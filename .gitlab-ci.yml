@@ -15,7 +15,7 @@ static-dist:
         --disable-shared --enable-static --enable-executable-static \
         -fstatic --ghc-options='-optl=-static' \
         --installdir=out --overwrite-policy=always \
-        rank-lips
+        exe:rank-lips
     - rm -Rf result; cp -Lr out/ result
   cache:
     paths:
