@@ -284,10 +284,8 @@ opts = subparser
     <> cmd "convert-old-model"        doConvertModel'
     <> cmd "version" doPrintVersion
   where
-    cmd name 
-    
-     = command name (info (helper <*> action) fullDesc)
-    
+    cmd name action = command name (info (helper <*> action) fullDesc)
+     
     doPrintVersion =
         f <$> optional (option str (short 'v'))
       where 
