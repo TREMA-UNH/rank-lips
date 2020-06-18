@@ -1,0 +1,29 @@
+Example for Rank-Lips
+=====================
+
+Data and an example shell script to explain the usage of the rank-lips tool.
+
+For more information and download  of rank-lips, please see <http://www.cs.unh.edu/~dietz/rank-lips/>
+
+
+
+Files in this archive:
+
+- README.mkd: This file
+- train-features/: Directory with example features for training (with `rank-lips train`)
+    - FeatureA: runfile representing the feature "FeatureA" for training data
+    - FeatureB: same for B
+    - FeatureC: same for C
+- train.qrel: `trec_eval`-style qrels file containing the ground truth for training
+- test-features/: Directory with example features for testing (with `rank-lips predict`)
+    - FeatureA: runfile representing the feature "FeatureA" for test data
+    - FeatureB: same for B
+    - FeatureC: same for C
+- test.qrel: `trec_eval`-style qrels file containing the ground truth for testing
+- run.sh: Bash script with examples on how to run rank-lips with this data
+
+This example is provided under a Creative-Commons Attribution Share-Alike license. The Rank-lips software is provided under a BSD license.
+
+Author: [Laura Dietz](http://www.cs.unh.edu/~dietz/)
+
+

@@ -88,11 +88,12 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , cvFold :: Maybe Integer
                                        , heldoutQueries :: Maybe [SimplirRun.QueryId]
                                        , experimentName :: Maybe String
+                                       , rankLipsVersion :: Maybe String
                                        }
   
 
 defaultRankLipsModel :: Model f s  -> RankLipsModel f s
-defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
 data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
@@ -103,6 +104,7 @@ data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams
                        | RankLipsHeldoutQueries [SimplirRun.QueryId]
                        | RankLipsIsFullTrain
                        | RankLipsExperimentName String
+                       | RankLipsVersion String
   deriving (Show, Generic, ToJSON, FromJSON)
 
 data RankLipsModelSerialized f = RankLipsModelSerialized { rankLipsTrainedModel :: SomeModel f

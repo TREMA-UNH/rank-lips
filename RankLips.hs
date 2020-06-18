@@ -243,6 +243,7 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
             RankLipsExperimentName name -> rlm {experimentName = Just name}
             RankLipsHeldoutQueries queries -> rlm {heldoutQueries = Just queries}
             RankLipsConvergenceDiagParams params -> rlm {convergenceDiagParameters = Just params}
+            RankLipsVersion version -> rlm {rankLipsVersion = Just version}
             x -> error $ "Don't know how to read metadata field "<> (show x)
 
 
@@ -254,8 +255,9 @@ createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
+                    -> Maybe String
                     -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
-createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore =
+createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore version  =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
@@ -266,6 +268,7 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt co
                                          , fmap RankLipsExperimentName experimentName
                                          , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
                                          , fmap RankLipsHeldoutQueries heldOutQueries
+                                         , fmap RankLipsVersion version
                                          ]
         in RankLipsModelSerialized{..}
     )
@@ -276,6 +279,11 @@ gitMsg :: String
 gitMsg =  concat [ "[git ", $(gitBranch), "@", $(gitHash)
                  , " (", $(gitCommitDate), ")"
                  , "] " ]
+
+
+getRankLipsVersion :: String
+getRankLipsVersion = "Rank-lips version 1.1"
+
 
 opts :: Parser (IO ())
 opts = subparser
@@ -290,9 +298,9 @@ opts = subparser
         f <$> optional (option str (short 'v'))
       where 
           f :: Maybe String -> IO()
-          f _v = putStrLn $ unlines ["Rank-lips version 1.1"
-                                    , "github.com:bgamari/mediawiki-annotate.git"
-                                    , gitMsg
+          f _v = putStrLn $ unlines [ getRankLipsVersion
+                                    , "https://github.com/TREMA-UNH/rank-lips"
+                                    -- , gitMsg
                                     ]
         
     doTrain' =
@@ -488,7 +496,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
         evalCutoff = (EvalCutoffAt 100)
 
-        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore) (Just getRankLipsVersion)
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelEnvelope
 

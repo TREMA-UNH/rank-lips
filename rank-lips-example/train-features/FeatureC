@@ -1,0 +1,10 @@
+Q1 0 doc1 1 0.0 run
+Q1 0 doc2 2 0.1 run
+Q1 0 doc3 3 0.0 run
+Q2 0 doc4 1 0.0 run
+Q2 0 doc5 2 0.0 run
+Q2 0 doc6 3 0.2 run
+Q2 0 doc7 4 0.0 run
+Q2 0 doc8 5 0.0 run
+Q2 0 doc9 6 0.1 run
+Q3 0 doc10 1 0.0 run
