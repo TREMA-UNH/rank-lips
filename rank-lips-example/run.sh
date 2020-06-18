@@ -6,7 +6,7 @@ set -x
 
 
 
-bin="/home/dietz/trec-car/code/mediawiki-annotate/bin"  # Path to the rank-lips binary
+#bin="./"  # Path to the rank-lips binary
 
 TREC_EVAL="trec_eval" # path to trec_eval binary (if not available, comment out section below)
 

@@ -1,9 +1,14 @@
+image: registry.gitlab.haskell.org/ghc/ci-images/x86_64-linux-alpine
+stages:
+  - build
+  - test
+
 variables:
   THREADS: 9
   GIT_SUBMODULE_STRATEGY: recursive
 
 static-dist:
-  image: registry.gitlab.haskell.org/ghc/ci-images/x86_64-linux-alpine
+  stage: build
   before_script:
     - ghc --version
   script:
@@ -24,3 +29,14 @@ static-dist:
     expire_in: 8 weeks
     paths:
       - result
+
+cmd-parameter-test:
+  stage: test
+  dependencies:
+    - static-dist
+  script:
+    - |
+      export bin=$(pwd)/results
+      cd rank-lips-example
+      ./run.sh
+      rm -R out
