@@ -1,0 +1,17 @@
+allow-newer:
+    -- for pipes-text
+    pipes-safe
+    profunctors
+
+packages:
+    simpl-ir/*/*.cabal
+    simpl-ir/vendor/*/*.cabal
+    ./
+
+debug-info: True
+
+allow-newer: fgl
+source-repository-package
+  type: git
+  location: https://github.com/recursion-ninja/fgl.git
+  tag: d49cd7b0cd766d9f4647e140e263de1b94ace0c5

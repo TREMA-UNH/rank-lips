@@ -3,7 +3,7 @@ cabal-version:       >=1.10
 --   For further documentation, see http://haskell.org/cabal/users-guide/
 
 name:                rank-lips
-version:             0.1.0.0
+version:             0.1.1.0
 synopsis:            List-wise learning to rank tool, supports optimization for MAP with mini-batched coordinate ascent.
 -- description:
 -- bug-reports:
@@ -60,7 +60,6 @@ executable rank-lips
                        hashable,
                        heaps,
                        psqueues,
-                       graphviz,
                        transformers,
                        aeson,
                        simplir,
@@ -76,7 +75,6 @@ executable rank-lips
                        serialise,
                        filepath,
                        log-domain,
-                       snowball,
                        time,
                        split,
                        directory,
