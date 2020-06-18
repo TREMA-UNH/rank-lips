@@ -33,7 +33,6 @@ import Data.Aeson
 import System.Random
 import GHC.Stack
 import System.FilePath
--- import Text.Read
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -172,6 +171,7 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
+    -- <*> (option str (long "default-features-file")  <|> option double (long "default-feature-value" <> value 0.0))
 
 
 
@@ -273,14 +273,9 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt co
 
 
 gitMsg :: String
-gitMsg = panicMsg
-  where panicMsg =
-          concat [ "[git ", $(gitBranch), "@", $(gitHash)
+gitMsg =  concat [ "[git ", $(gitBranch), "@", $(gitHash)
                  , " (", $(gitCommitDate), ")"
-                 , " (", $(gitCommitCount), " commits in HEAD)"
-                 , dirty, "] " ]
-        dirty | $(gitDirty) = " (uncommitted files present)"
-              | otherwise   = ""
+                 , "] " ]
 
 opts :: Parser (IO ())
 opts = subparser
@@ -295,17 +290,17 @@ opts = subparser
         f <$> optional (option str (short 'v'))
       where 
           f :: Maybe String -> IO()
-          f _v = putStrLn $ "Rank-lips version 1.1 \n" <> gitMsg
+          f _v = putStrLn $ unlines ["Rank-lips version 1.1"
+                                    , "github.com:bgamari/mediawiki-annotate.git"
+                                    , gitMsg
+                                    ]
         
-
-
-
     doTrain' =
         f <$> featureParamsParser
           <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
           <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
           <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )
-          <*> option str (long "experiment" <> short 'e' <> help "experiment name (will be used as part of filename)" <> metavar "FILE" )
+          <*> option str (long "experiment" <> short 'e' <> help "experiment name (will be archived in the model file)" <> metavar "FRIENDLY_NAME" )
           <*> (minibatchParser <|> pure defaultMiniBatchParams)
           <*> (flag False True ( long "train-cv" <> help "Also train with 5-fold cross validation"))
           <*> (flag False True ( long "z-score" <> help "Z-score normalize features"))
@@ -324,8 +319,8 @@ opts = subparser
     doPredict' =
         f <$> featureParamsParser
           <*> option str (long "output-prefix" <> short 'o' <> help "directory and file prefix to write output to." <> metavar "OUT")     
-          <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" ))
-          <*> option str (long "model" <> short 'm' <> help "file where model parameters will be written to" <> metavar "FILE" )
+          <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file, if provided, test MAP scores will be reported" <> metavar "QRELS" ))
+          <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
       where
         f :: FeatureParams ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
         f fparams@FeatureParams{..} outputFilePrefix qrelFileOpt modelFile = do
@@ -474,8 +469,17 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
                 else (featureDataList, createModelEnvelope id)
 
-        allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
-        allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
+        allDataListRaw :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
+        allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
+
+        -- remove queries without positive (and negative) training data
+        allDataListTrainable = M.filter isTrainable allDataListRaw
+          where isTrainable :: [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)] -> Bool
+                isTrainable value =
+                    let (vsFalse,vsTrue) = partition (\(doc,feat,rel)-> rel == NotRelevant)  value
+                    in (not $ null vsFalse) && (not $ null $ vsTrue)
+
+        allDataList = allDataListTrainable
 
         evalCutoff = (EvalCutoffAt 100)
 
