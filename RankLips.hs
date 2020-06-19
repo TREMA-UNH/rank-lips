@@ -256,9 +256,10 @@ createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe MiniBatchParams
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
+                    -> Maybe Bool
                     -> Maybe String
                     -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
-createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore version  =
+createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore saveHeldoutQueriesInModel version  =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
@@ -267,7 +268,9 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagP
                                          , fmap RankLipsUseZScore useZscore
                                          , fmap RankLipsExperimentName experimentName
                                          , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
-                                         , fmap RankLipsHeldoutQueries heldOutQueries
+                                         , if (fromMaybe False saveHeldoutQueriesInModel) 
+                                             then fmap RankLipsHeldoutQueries heldOutQueries
+                                             else Nothing
                                          , fmap RankLipsVersion version
                                          ]
         in RankLipsModelSerialized{..}
@@ -312,17 +315,18 @@ opts = subparser
           <*> (minibatchParser <|> pure defaultMiniBatchParams)
           <*> (flag False True ( long "train-cv" <> help "Also train with 5-fold cross validation"))
           <*> (flag False True ( long "z-score" <> help "Z-score normalize features"))
+          <*> (flag False True ( long "save-heldout-queries-in-model" <> help "Save heldout query ids in model file (cross-validation only)"))
           <*> convergenceParamParser
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> ConvergenceDiagParams-> IO()
-        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore convergenceParams = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> IO()
+        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams = do
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
             let features' = case features of
                                 [] -> dirFeatureFiles
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
-            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore convergenceParams
+            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams
 
     doPredict' =
         f <$> featureParamsParser
@@ -442,9 +446,10 @@ doTrain :: FeatureParams
             -> MiniBatchParams
             -> Bool
             -> Bool
+            -> Bool
             -> ConvergenceDiagParams
             -> IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore convergenceParams = do
+doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -495,7 +500,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
         allDataList = allDataListTrainable
 
 
-        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just getRankLipsVersion)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just getRankLipsVersion)
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
