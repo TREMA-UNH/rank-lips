@@ -88,12 +88,16 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , heldoutQueries :: Maybe [SimplirRun.QueryId]
                                        , experimentName :: Maybe String
                                        , rankLipsVersion :: Maybe String
+                                       , defaultFeatureParams :: Maybe DefaultFeatureParams
                                        }
   
 
 defaultRankLipsModel :: Model f s  -> RankLipsModel f s
-defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
+
+data DefaultFeatureParams = DefaultFeatureSingleValue !Double
+  deriving (Show, Eq, Generic, ToJSON, FromJSON)
 
 data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
                        | RankLipsConvergenceDiagParams ConvergenceDiagParams
@@ -103,6 +107,7 @@ data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams
                        | RankLipsIsFullTrain
                        | RankLipsExperimentName String
                        | RankLipsVersion String
+                       | RankLipsDefaultFeatures DefaultFeatureParams
   deriving (Show, Generic, ToJSON, FromJSON)
 
 data RankLipsModelSerialized f = RankLipsModelSerialized { rankLipsTrainedModel :: SomeModel f
