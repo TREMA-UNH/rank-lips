@@ -20,8 +20,8 @@ TEST_FEATURE_DIR="./test-features"
 TEST_QREL="test.qrel"
 EXPERIMENT_NAME="my first rank-lips experiment"
 
-FEAT_PARAM="--feature-variant FeatScore"
-OPT_PARAM="--convergence-threshold 0.001 --mini-batch-size 1000 --z-score"
+FEAT_PARAM="--feature-variant FeatScore" 
+OPT_PARAM="--z-score --default-feature-value 100.0 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
 
 
 
@@ -72,12 +72,9 @@ echo "Train/Test MAP scores"
 
 $bin/rank-lips train --train-cv -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_CV}" ${OPT_PARAM} ${FEAT_PARAM} |& grep -e "Model test test metric" -e "Model train train metric"
 
-echo "For comparison: TREC Eval's evaluation (no -c)"
-
-#${TREC_EVAL} -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 
 
-echo "For comparison: TREC Eval's evaluation (with -c)"
+echo "For comparison: TREC Eval's evaluation "
 
 #${TREC_EVAL} -c -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 
@@ -94,7 +91,7 @@ echo "enabling only features A and B"
 
 OUT_PREFIX_TRAIN="train-try-feature-subset"
 FEAT_PARAM="-f FeatureA -f FeatureB --feature-variant FeatScore"
-OPT_PARAM="--convergence-threshold 0.001 --mini-batch-size 1000 --z-score"
+OPT_PARAM="--z-score --convergence-threshold 0.001 --mini-batch-size 1000"
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 
@@ -105,7 +102,7 @@ echo "disabling z-score normalization"
 
 OUT_PREFIX_TRAIN="train-try-no-zscore"
 FEAT_PARAM="--feature-variant FeatScore"
-OPT_PARAM="--convergence-threshold 0.001 --mini-batch-size 1000 "   # removed "--z-score"
+OPT_PARAM="--convergence-threshold 0.001 --mini-batch-size 1000 " # removed --z-score
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 
@@ -113,7 +110,7 @@ $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIME
 echo "using both feature variations score and reciprocal rank"
 OUT_PREFIX_TRAIN="train-try-feature-variants"
 FEAT_PARAM="--feature-variant FeatScore --feature-variant FeatRecipRank"
-OPT_PARAM="--convergence-threshold 0.001 --mini-batch-size 1000 --z-score"
+OPT_PARAM="--z-score --convergence-threshold 0.001 --mini-batch-size 1000"
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 
@@ -121,10 +118,16 @@ $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIME
 
 echo "using tighter convergence parameter and smaller minibatches"
 OUT_PREFIX_TRAIN="train-try-convergence-mini-batch"
-FEAT_PARAM="--feature-variant FeatScore --feature-variant FeatRecipRank"
-OPT_PARAM="--convergence-threshold 0.0001 --mini-batch-size 1 --z-score"  # we chose mini-batch of a single query, because we only have 2 train queries in total, typical minibatch-sizes are 10, 100, 1000
+FEAT_PARAM="--feature-variant FeatScore --feature-variant FeatRecipRank" 
+OPT_PARAM="--z-score --convergence-threshold 0.0001 --mini-batch-size 1"  # we chose mini-batch of a single query, because we only have 2 train queries in total, typical minibatch-sizes are 10, 100, 1000
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 
 
+echo "Different eval cutoff"
+OUT_PREFIX_TRAIN="train-eval-cutoff"
+FEAT_PARAM="--feature-variant FeatScore"
+OPT_PARAM="--z-score --convergence-eval-cutoff 2 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
+
+$bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 

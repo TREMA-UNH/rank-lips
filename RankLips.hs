@@ -140,7 +140,7 @@ minibatchParser = MiniBatchParams
 -- defaultConvergence info threshold maxIter dropIter
 
 defaultConvergenceParams :: ConvergenceDiagParams
-defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0
+defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0 (EvalCutoffAt 100) 5 5
 
 convergenceParamParser :: Parser ConvergenceDiagParams
 convergenceParamParser = 
@@ -151,11 +151,20 @@ convergenceParamParser =
                         <> help ("max number of iterations after which training is stopped (use to avoid loops), default: "<> show defIter))
         <*> option auto (long "convergence-drop-initial-iterations" <> metavar "ITER" <> value defDrop 
                         <> help ("number of initial iterations to disregard before convergence is monitored, default: "<> show defDrop))
+        <*> option (EvalCutoffAt <$> auto) (long "convergence-eval-cutoff" <> metavar "K"  <> value (EvalCutoffAt defEvalCutoff)
+                        <> help ("Training MAP will only be evaluated on top K (saves runtime), default: "<> show defEvalCutoff))
+        <*> option auto (short 'r' <> long "restarts" <> metavar "N" <> value defRestarts
+                        <> help ("number of restarts per fold/model (model with best training performance will be chosen), default: "<> show defRestarts))
+        <*> option auto (long "folds" <> metavar "K"  <> value defFolds
+                        <> help ("number of folds (cross-validation only), default: "<> show defFolds))
   
   where ConvergenceDiagParams { convergenceThreshold=defThresh
                              , convergenceMaxIter=defIter
-                             , convergenceDropInitIter=defDrop} = defaultConvergenceParams
-
+                             , convergenceDropInitIter=defDrop
+                             , convergenceEvalCutoff=(EvalCutoffAt defEvalCutoff)
+                             , convergenceRestarts=defRestarts
+                             , convergenceFolds=defFolds
+                             } = defaultConvergenceParams
 
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
                                    , features :: [FilePath]
@@ -171,9 +180,12 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
-    -- <*> (option str (long "default-features-file")  <|> option double (long "default-feature-value" <> value 0.0))
 
-
+defaultFeatureParamsParser :: Parser DefaultFeatureParams
+defaultFeatureParamsParser = 
+    DefaultFeatureSingleValue 
+          <$> option auto (long "default-feature-value" <> metavar "VALUE" <> value 0.0 
+                          <> help "When any feature is missing for a query/doc pair, this value will be used as feature value, default 0.0. " )
 
 
 data FeatureSet = FeatureSet { featureNames :: S.Set Feat
@@ -205,6 +217,7 @@ featureSet FeatureParams{..} =
                     ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
                 produceFeature FeatRecipRank = 
                     ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
+
     in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
 
 
@@ -236,7 +249,6 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
         readMeta rlm metafield =
           case metafield of
             RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
-            RankLipsEvalCutoff params -> rlm {evalCutoffOpt = Just params}
             RankLipsUseZScore flag -> rlm {useZscore = Just flag}
             RankLipsCVFold fold -> rlm {cvFold = Just fold}
             RankLipsIsFullTrain -> rlm {cvFold = Nothing}
@@ -244,6 +256,7 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
             RankLipsHeldoutQueries queries -> rlm {heldoutQueries = Just queries}
             RankLipsConvergenceDiagParams params -> rlm {convergenceDiagParameters = Just params}
             RankLipsVersion version -> rlm {rankLipsVersion = Just version}
+            RankLipsDefaultFeatures params -> rlm {defaultFeatureParams = Just params}
             x -> error $ "Don't know how to read metadata field "<> (show x)
 
 
@@ -252,23 +265,26 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
 createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe String
                     -> Maybe MiniBatchParams
-                    -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
+                    -> Maybe Bool
                     -> Maybe String
+                    -> Maybe DefaultFeatureParams
                     -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
-createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore version  =
+createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore saveHeldoutQueriesInModel version defaultFeatureParams =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
             rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
-                                         , fmap RankLipsEvalCutoff evalCutoffOpt
                                          , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
                                          , fmap RankLipsUseZScore useZscore
                                          , fmap RankLipsExperimentName experimentName
                                          , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
-                                         , fmap RankLipsHeldoutQueries heldOutQueries
+                                         , if (fromMaybe False saveHeldoutQueriesInModel) 
+                                             then fmap RankLipsHeldoutQueries heldOutQueries
+                                             else Nothing
                                          , fmap RankLipsVersion version
+                                         , fmap RankLipsDefaultFeatures defaultFeatureParams
                                          ]
         in RankLipsModelSerialized{..}
     )
@@ -312,17 +328,19 @@ opts = subparser
           <*> (minibatchParser <|> pure defaultMiniBatchParams)
           <*> (flag False True ( long "train-cv" <> help "Also train with 5-fold cross validation"))
           <*> (flag False True ( long "z-score" <> help "Z-score normalize features"))
+          <*> (flag False True ( long "save-heldout-queries-in-model" <> help "Save heldout query ids in model file (cross-validation only)"))
           <*> convergenceParamParser
+          <*> defaultFeatureParamsParser
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> ConvergenceDiagParams-> IO()
-        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore convergenceParams = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> IO()
+        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams = do
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
             let features' = case features of
                                 [] -> dirFeatureFiles
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
-            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore convergenceParams
+            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams
 
     doPredict' =
         f <$> featureParamsParser
@@ -334,7 +352,7 @@ opts = subparser
         f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
         f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile = do
 
-            SomeRankLipsModel (lipsModel :: RankLipsModel f ph) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
+            (SomeRankLipsModel (lipsModel :: RankLipsModel f ph)) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
 
             let model = trainedModel lipsModel
                 fspace = modelFeatures model  
@@ -354,7 +372,7 @@ opts = subparser
             let revertedModelFeatureFiles = nub $ mapMaybe extractFeatFiles modelFeatureFiles
                 outputFilePrefix = outputDir </> outputPrefix
 
-            doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix model qrelFileOpt
+            doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix (defaultFeatureParams lipsModel) model qrelFileOpt
           where
               extractFeatFiles :: Feat -> Maybe FilePath
               extractFeatFiles (Feat FeatNameInputRun{..}) = Just fRunFile
@@ -404,14 +422,22 @@ loadQrelInfo qrelFile = do
 doPredict :: forall ph 
             . FeatureParams
             -> FilePath 
+            -> Maybe DefaultFeatureParams
             -> Model Feat ph
             -> Maybe FilePath 
             -> IO () 
-doPredict featureParams@FeatureParams{..} outputFilePrefix model qrelFileOpt  = do
-    let FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
-         = featureSet featureParams
+doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
 
     let fspace = modelFeatures model
+
+        defaultFeatureVec :: FeatureVec Feat ph Double
+        defaultFeatureVec = 
+          case  defaultFeatureParamsOpt of
+              Just (DefaultFeatureSingleValue val) ->  F.fromList fspace $ [ (fname, val)  | fname <- F.featureNames fspace]
+              _ -> error "not implemented yet"
+
+        FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
+           = featureSet featureParams
 
     runFiles <- loadRunFiles  featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
@@ -421,7 +447,7 @@ doPredict featureParams@FeatureParams{..} outputFilePrefix model qrelFileOpt  = 
              <$> mapM loadQrelInfo qrelFileOpt
 
 
-    let featureDataMap = runFilesToFeatureVectorsMap fspace produceFeatures runFiles
+    let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList = fmap M.toList featureDataMap
 
         allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
@@ -442,9 +468,11 @@ doTrain :: FeatureParams
             -> MiniBatchParams
             -> Bool
             -> Bool
+            -> Bool
             -> ConvergenceDiagParams
+            -> DefaultFeatureParams
             -> IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore convergenceParams = do
+doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -456,7 +484,11 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
     QrelInfo{..} <- loadQrelInfo qrelFile
 
-    let featureDataMap = runFilesToFeatureVectorsMap fspace produceFeatures runFiles
+    let defaultFeatureVec = 
+          case defaultFeatureParams of
+              DefaultFeatureSingleValue val ->  F.fromList fspace $ [ (fname, val)  | fname <- F.featureNames fspace]
+
+        featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
@@ -485,20 +517,12 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
         allDataListRaw :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
-        -- remove queries without positive (and negative) training data
-        allDataListTrainable = M.filter isTrainable allDataListRaw
-          where isTrainable :: [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)] -> Bool
-                isTrainable value =
-                    let (vsFalse,vsTrue) = partition (\(doc,feat,rel)-> rel == NotRelevant)  value
-                    in (not $ null vsFalse) && (not $ null $ vsTrue)
+        allDataList = allDataListRaw
 
-        allDataList = allDataListTrainable
 
-        evalCutoff = (EvalCutoffAt 100)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just getRankLipsVersion) (Just defaultFeatureParams)
 
-        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore) (Just getRankLipsVersion)
-
-    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelEnvelope
+    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
 train :: Bool
@@ -507,11 +531,10 @@ train :: Bool
       -> [QRel.Entry SimplirRun.QueryId doc IsRelevant]
       -> MiniBatchParams
       -> ConvergenceDiagParams
-      -> EvalCutoff
       -> FilePath
       -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model Feat ph -> RankLipsModelSerialized Feat)
       -> IO()
-train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelEnvelope =  do
+train includeCv fspace allData qrel miniBatchParams convergenceDiagParams outputFilePrefix modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
         !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
         totalElems = getSum . foldMap ( Sum . length ) $ allData
@@ -531,7 +554,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCu
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainMe includeCv miniBatchParams convergenceDiagParams evalCutoff
+    trainMe includeCv miniBatchParams convergenceDiagParams
             gen0 allData fspace metric outputFilePrefix "" modelEnvelope
 
 
@@ -580,15 +603,16 @@ internFeatures fspace features =
 
 
 runFilesToFeatureVectorsMap :: forall ph . F.FeatureSpace Feat ph 
+                          -> F.FeatureVec Feat ph Double
                           -> (FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)])
                           -> [(FilePath, [SimplirRun.RankingEntry])] 
                           -> M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double))
-runFilesToFeatureVectorsMap fspace produceFeatures runData = 
+runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData = 
     let features:: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName [(Feat, Double)]) 
         features = M.fromListWith (M.unionWith (<>))
                  $ [ (queryId, 
                         M.fromListWith (<>)
-                        [(documentName 
+                        [( documentName 
                          , internFeatures fspace $ produceFeatures fname entry
                         )]
                       )
@@ -603,7 +627,7 @@ runFilesToFeatureVectorsMap fspace produceFeatures runData =
     in featureVectors
   where featureVectorize :: M.Map SimplirRun.DocumentName [(Feat, Double)] -> M.Map SimplirRun.DocumentName (FeatureVec Feat ph Double)
         featureVectorize docFeatureList =
-            fmap (F.fromList fspace)  docFeatureList
+            fmap (F.modify defaultFeatureVec) docFeatureList
 
 
 
