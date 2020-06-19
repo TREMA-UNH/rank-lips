@@ -2,112 +2,112 @@ cradle:
   cabal:
 
 
-    - path: "simplir/simplir/src"
+    - path: "simpl-ir/simplir/src"
       component: "lib:simplir"
 
-    - path: "simplir/simplir/src"
+    - path: "simpl-ir/simplir/src"
       component: "lib:simplir"
 
-    - path: "simplir/simplir/tests"
+    - path: "simpl-ir/simplir/tests"
       component: "simplir:test:tests"
 
-    - path: "simplir/simplir-data-source/./"
+    - path: "simpl-ir/simplir-data-source/./"
       component: "lib:simplir-data-source"
 
-    - path: "simplir/simplir-data-source-s3/./"
+    - path: "simpl-ir/simplir-data-source-s3/./"
       component: "lib:simplir-data-source-s3"
 
-    - path: "simplir/simplir-disk-index/src"
+    - path: "simpl-ir/simplir-disk-index/src"
       component: "lib:simplir-disk-index"
 
-    - path: "simplir/simplir-disk-index/src"
+    - path: "simpl-ir/simplir-disk-index/src"
       component: "lib:simplir-disk-index"
 
-    - path: "simplir/simplir-disk-index/.//DumpPostings.hs"
+    - path: "simpl-ir/simplir-disk-index/.//DumpPostings.hs"
       component: "simplir-disk-index:exe:dump-postings"
 
-    - path: "simplir/simplir-disk-index/tests"
+    - path: "simpl-ir/simplir-disk-index/tests"
       component: "simplir-disk-index:test:tests"
 
-    - path: "simplir/simplir-eval/src"
+    - path: "simpl-ir/simplir-eval/src"
       component: "lib:simplir-eval"
 
-    - path: "simplir/simplir-eval/src"
+    - path: "simpl-ir/simplir-eval/src"
       component: "lib:simplir-eval"
 
-    - path: "simplir/simplir-eval/.//Main.hs"
+    - path: "simpl-ir/simplir-eval/.//Main.hs"
       component: "simplir-eval:exe:simplir-eval"
 
-    - path: "simplir/simplir-eval/.//MergeRankings.hs"
+    - path: "simpl-ir/simplir-eval/.//MergeRankings.hs"
       component: "simplir-eval:exe:simplir-merge-runs"
 
-    - path: "simplir/simplir-eval/tests"
+    - path: "simpl-ir/simplir-eval/tests"
       component: "simplir-eval:test:vs-trec-eval"
 
-    - path: "simplir/simplir-galago/."
+    - path: "simpl-ir/simplir-galago/."
       component: "lib:simplir-galago"
 
-    - path: "simplir/simplir-html-clean/src"
+    - path: "simpl-ir/simplir-html-clean/src"
       component: "lib:simplir-html-clean"
 
-    - path: "simplir/simplir-html-clean/.//Main.hs"
+    - path: "simpl-ir/simplir-html-clean/.//Main.hs"
       component: "simplir-html-clean:exe:html-clean"
 
-    - path: "simplir/simplir-io/src"
+    - path: "simpl-ir/simplir-io/src"
       component: "lib:simplir-io"
 
-    - path: "simplir/simplir-kyoto-index/src"
+    - path: "simpl-ir/simplir-kyoto-index/src"
       component: "lib:simplir-kyoto-index"
 
-    - path: "simplir/simplir-learning-to-rank/src"
+    - path: "simpl-ir/simplir-learning-to-rank/src"
       component: "lib:simplir-learning-to-rank"
 
-    - path: "simplir/simplir-learning-to-rank/.//Learn2Rank.hs"
+    - path: "simpl-ir/simplir-learning-to-rank/.//Learn2Rank.hs"
       component: "simplir-learning-to-rank:exe:simplir-learn2rank"
 
-    - path: "simplir/simplir-learning-to-rank/tests"
+    - path: "simpl-ir/simplir-learning-to-rank/tests"
       component: "simplir-learning-to-rank:test:tests"
 
-    - path: "simplir/simplir-leveldb-index/src"
+    - path: "simpl-ir/simplir-leveldb-index/src"
       component: "lib:simplir-leveldb-index"
 
-    - path: "simplir/simplir-pipes-utils/src"
+    - path: "simpl-ir/simplir-pipes-utils/src"
       component: "lib:simplir-pipes-utils"
 
-    - path: "simplir/simplir-stop-words/src"
+    - path: "simpl-ir/simplir-stop-words/src"
       component: "lib:simplir-stop-words"
 
-    - path: "simplir/simplir-tools/.//Search.hs"
+    - path: "simpl-ir/simplir-tools/.//Search.hs"
       component: "simplir-tools:exe:simplir"
 
-    - path: "simplir/simplir-tools/.//Search2.hs"
+    - path: "simpl-ir/simplir-tools/.//Search2.hs"
       component: "simplir-tools:exe:simplir2"
 
-    - path: "simplir/simplir-trec/./"
+    - path: "simpl-ir/simplir-trec/./"
       component: "lib:simplir-trec"
 
-    - path: "simplir/simplir-trec/.//Benchmark.hs"
+    - path: "simpl-ir/simplir-trec/.//Benchmark.hs"
       component: "simplir-trec:bench:bench"
 
-    - path: "simplir/simplir-trec-streaming/src"
+    - path: "simpl-ir/simplir-trec-streaming/src"
       component: "lib:simplir-trec-streaming"
 
-    - path: "simplir/simplir-trec-streaming/.//ListDocuments.hs"
+    - path: "simpl-ir/simplir-trec-streaming/.//ListDocuments.hs"
       component: "simplir-trec-streaming:exe:trec-streaming-ls-documents"
 
-    - path: "simplir/simplir-trec-streaming/.//IndexFac.hs"
+    - path: "simpl-ir/simplir-trec-streaming/.//IndexFac.hs"
       component: "simplir-trec-streaming:exe:index-fac"
 
-    - path: "simplir/simplir-trec-streaming/.//Streaming.hs"
+    - path: "simpl-ir/simplir-trec-streaming/.//Streaming.hs"
       component: "simplir-trec-streaming:exe:kba-streaming"
 
-    - path: "simplir/simplir-trec-streaming/.//MergeRankings.hs"
+    - path: "simpl-ir/simplir-trec-streaming/.//MergeRankings.hs"
       component: "simplir-trec-streaming:exe:merge-kba-rankings"
 
-    - path: "simplir/simplir-trec-streaming/.//Extract.hs"
+    - path: "simpl-ir/simplir-trec-streaming/.//Extract.hs"
       component: "simplir-trec-streaming:exe:extract-kba-documents"
 
-    - path: "simplir/simplir-word-embedding/src"
+    - path: "simpl-ir/simplir-word-embedding/src"
       component: "lib:simplir-word-embedding"
       
     - path: "./RankLips.hs"

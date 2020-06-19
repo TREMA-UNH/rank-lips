@@ -140,7 +140,7 @@ minibatchParser = MiniBatchParams
 -- defaultConvergence info threshold maxIter dropIter
 
 defaultConvergenceParams :: ConvergenceDiagParams
-defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0
+defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0 (EvalCutoffAt 100)
 
 convergenceParamParser :: Parser ConvergenceDiagParams
 convergenceParamParser = 
@@ -151,11 +151,14 @@ convergenceParamParser =
                         <> help ("max number of iterations after which training is stopped (use to avoid loops), default: "<> show defIter))
         <*> option auto (long "convergence-drop-initial-iterations" <> metavar "ITER" <> value defDrop 
                         <> help ("number of initial iterations to disregard before convergence is monitored, default: "<> show defDrop))
+        <*> option (EvalCutoffAt <$> auto) (long "convergence-eval-cutoff" <> metavar "K"  <> value (EvalCutoffAt defEvalCutoff)
+                        <> help ("Training MAP will only be evaluated on top K (saves runtime) default: "<> show defEvalCutoff))
   
   where ConvergenceDiagParams { convergenceThreshold=defThresh
                              , convergenceMaxIter=defIter
-                             , convergenceDropInitIter=defDrop} = defaultConvergenceParams
-
+                             , convergenceDropInitIter=defDrop
+                             , convergenceEvalCutoff=(EvalCutoffAt defEvalCutoff)
+                             } = defaultConvergenceParams
 
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
                                    , features :: [FilePath]
@@ -236,7 +239,6 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
         readMeta rlm metafield =
           case metafield of
             RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
-            RankLipsEvalCutoff params -> rlm {evalCutoffOpt = Just params}
             RankLipsUseZScore flag -> rlm {useZscore = Just flag}
             RankLipsCVFold fold -> rlm {cvFold = Just fold}
             RankLipsIsFullTrain -> rlm {cvFold = Nothing}
@@ -252,17 +254,15 @@ deserializeRankLipsModel RankLipsModelSerialized{..} =
 createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe String
                     -> Maybe MiniBatchParams
-                    -> Maybe EvalCutoff
                     -> Maybe ConvergenceDiagParams
                     -> Maybe Bool
                     -> Maybe String
                     -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
-createModelEnvelope modelConv experimentName minibatchParamsOpt evalCutoffOpt convergenceDiagParameters useZscore version  =
+createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore version  =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsTrainedModel = SomeModel trainedModel
             rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
-                                         , fmap RankLipsEvalCutoff evalCutoffOpt
                                          , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
                                          , fmap RankLipsUseZScore useZscore
                                          , fmap RankLipsExperimentName experimentName
@@ -494,11 +494,10 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
         allDataList = allDataListTrainable
 
-        evalCutoff = (EvalCutoffAt 100)
 
-        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just evalCutoff) (Just convergenceParams) (Just useZScore) (Just getRankLipsVersion)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just getRankLipsVersion)
 
-    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams evalCutoff  outputFilePrefix modelEnvelope
+    train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
 train :: Bool
@@ -507,11 +506,10 @@ train :: Bool
       -> [QRel.Entry SimplirRun.QueryId doc IsRelevant]
       -> MiniBatchParams
       -> ConvergenceDiagParams
-      -> EvalCutoff
       -> FilePath
       -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model Feat ph -> RankLipsModelSerialized Feat)
       -> IO()
-train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCutoff outputFilePrefix modelEnvelope =  do
+train includeCv fspace allData qrel miniBatchParams convergenceDiagParams outputFilePrefix modelEnvelope =  do
     let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
         !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
         totalElems = getSum . foldMap ( Sum . length ) $ allData
@@ -531,7 +529,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams evalCu
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainMe includeCv miniBatchParams convergenceDiagParams evalCutoff
+    trainMe includeCv miniBatchParams convergenceDiagParams
             gen0 allData fspace metric outputFilePrefix "" modelEnvelope
 
 
