@@ -140,7 +140,7 @@ minibatchParser = MiniBatchParams
 -- defaultConvergence info threshold maxIter dropIter
 
 defaultConvergenceParams :: ConvergenceDiagParams
-defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0 (EvalCutoffAt 100)
+defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0 (EvalCutoffAt 100) 5 5
 
 convergenceParamParser :: Parser ConvergenceDiagParams
 convergenceParamParser = 
@@ -152,12 +152,18 @@ convergenceParamParser =
         <*> option auto (long "convergence-drop-initial-iterations" <> metavar "ITER" <> value defDrop 
                         <> help ("number of initial iterations to disregard before convergence is monitored, default: "<> show defDrop))
         <*> option (EvalCutoffAt <$> auto) (long "convergence-eval-cutoff" <> metavar "K"  <> value (EvalCutoffAt defEvalCutoff)
-                        <> help ("Training MAP will only be evaluated on top K (saves runtime) default: "<> show defEvalCutoff))
+                        <> help ("Training MAP will only be evaluated on top K (saves runtime), default: "<> show defEvalCutoff))
+        <*> option auto (short 'r' <> long "restarts" <> metavar "N" <> value defRestarts
+                        <> help ("number of restarts per fold/model (model with best training performance will be chosen), default: "<> show defRestarts))
+        <*> option auto (long "folds" <> metavar "K"  <> value defFolds
+                        <> help ("number of folds (cross-validation only), default: "<> show defFolds))
   
   where ConvergenceDiagParams { convergenceThreshold=defThresh
                              , convergenceMaxIter=defIter
                              , convergenceDropInitIter=defDrop
                              , convergenceEvalCutoff=(EvalCutoffAt defEvalCutoff)
+                             , convergenceRestarts=defRestarts
+                             , convergenceFolds=defFolds
                              } = defaultConvergenceParams
 
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath

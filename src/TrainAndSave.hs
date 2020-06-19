@@ -144,8 +144,8 @@ trainMe :: forall f s. (Ord f, ToJSONKey f, Show f)
         -> IO ()
 trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
           -- train me!
-          let nRestarts = 5
-              nFolds = 5
+          let nRestarts = convergenceRestarts convDiagParams
+              nFolds = convergenceFolds convDiagParams
 
 
           -- folded CV
@@ -192,6 +192,8 @@ data ConvergenceDiagParams = ConvergenceDiagParams { convergenceThreshold :: Dou
                                                   , convergenceMaxIter :: Int
                                                   , convergenceDropInitIter :: Int
                                                   , convergenceEvalCutoff :: EvalCutoff
+                                                  , convergenceRestarts :: Int
+                                                  , convergenceFolds :: Int
                                                   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
 
@@ -207,7 +209,7 @@ trainWithRestarts
     -> TrainData f s
     -> [(Model f s, Double)]
        -- ^ an infinite list of restarts
-trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff) gen0 metric info fspace trainData =
+trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
   let trainData' = discardUntrainable trainData
 
       rngSeeds :: [StdGen]
