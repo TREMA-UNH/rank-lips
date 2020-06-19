@@ -72,12 +72,9 @@ echo "Train/Test MAP scores"
 
 $bin/rank-lips train --train-cv -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_CV}" ${OPT_PARAM} ${FEAT_PARAM} |& grep -e "Model test test metric" -e "Model train train metric"
 
-echo "For comparison: TREC Eval's evaluation (no -c)"
-
-#${TREC_EVAL} -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 
 
-echo "For comparison: TREC Eval's evaluation (with -c)"
+echo "For comparison: TREC Eval's evaluation "
 
 #${TREC_EVAL} -c -m map ${TRAIN_QREL} ${OUT_DIR}/${OUT_PREFIX_CV}-run-test.run
 

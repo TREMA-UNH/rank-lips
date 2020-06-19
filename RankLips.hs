@@ -490,14 +490,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
         allDataListRaw :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
         allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
-        -- remove queries without positive (and negative) training data
-        allDataListTrainable = M.filter isTrainable allDataListRaw
-          where isTrainable :: [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)] -> Bool
-                isTrainable value =
-                    let (vsFalse,vsTrue) = partition (\(doc,feat,rel)-> rel == NotRelevant)  value
-                    in (not $ null vsFalse) && (not $ null $ vsTrue)
-
-        allDataList = allDataListTrainable
+        allDataList = allDataListRaw
 
 
         modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just getRankLipsVersion)
