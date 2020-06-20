@@ -141,8 +141,8 @@ featureParamsParser = FeatureParams
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
     ( DefaultFeatureSingleValue 
-          <$> option auto (long "default-any-feature-value" <> metavar "VALUE" <> value 0.0 
-                          <> help "When any feature is missing for a query/doc pair, this value will be used as feature value, default 0.0. " )
+          <$> option auto (long "default-any-feature-value" <> metavar "VALUE"
+                          <> help "When any feature is missing for a query/doc pair, this value will be used as feature value." )
     ) <|>
     ( DefaultFeatureVariantValue
           <$> many ( option ( parseFeatureVariantPair <$> str ) (long "default-feature-variant-value" <> metavar "KEY=VALUE" 
