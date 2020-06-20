@@ -160,7 +160,9 @@ defaultFeatureParamsParser =
         parseFeaturePair :: String -> ReadM (FeatName, Double)
         parseFeaturePair str =
             case Split.splitOn "=" str of
-                [fname, val] -> return $ (parseFeatName (T.pack fname), read val)
+                [fname, val] -> do
+                    fname' <- parseFeatName (T.pack fname)
+                    return (fname', read val)
                 _ -> fail $ "Ill-formed FNAME-FVariant=VALUE format (expecting exactly one '='), got: "<> str
 
 

@@ -25,7 +25,7 @@ module TrainAndSave where
 
 
 import qualified Data.Aeson as Aeson
-import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey, FromJSONKeyFunction(FromJSONKeyText))
+import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
@@ -87,11 +87,13 @@ instance ToJSONKey FeatName where
     toJSONKey = contramap encodeFeatureName Aeson.toJSONKey
 
 instance FromJSONKey FeatName where
-    fromJSONKey = FromJSONKeyText parseFeatName
+    fromJSONKey = Aeson.FromJSONKeyTextParser parseFeatName
 
-parseFeatName :: T.Text -> FeatName
+parseFeatName :: MonadFail m => T.Text -> m FeatName
 parseFeatName str =
-        head' $ mapMaybe matchEnd $ featureVariant'
+        case mapMaybe matchEnd $ featureVariant' of
+          x : _ -> return x
+          _     -> fail $ "Feature name is expected to be of pattern 'filename-FeatureVariant', but got feature name "<> (T.unpack str) <>". Names of accepted FeatureVariants are "<> show [minBound @FeatureVariant .. maxBound]
       where 
           matchEnd :: (FeatureVariant, T.Text) -> Maybe FeatName
           matchEnd (fvariant, fvariant') =
@@ -105,8 +107,7 @@ parseFeatName str =
 
 instance FromJSON FeatName where
     parseJSON (Aeson.String str) = 
-        return $ parseFeatName str
-
+      parseFeatName str
 
     parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
 
