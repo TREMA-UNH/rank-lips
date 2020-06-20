@@ -20,9 +20,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-
 module TrainAndSave where
-
 
 import qualified Data.Aeson as Aeson
 import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
@@ -69,7 +67,14 @@ type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)],
 
 
 data FeatureVariant = FeatScore | FeatRecipRank
-    deriving (Eq, Show, Ord,  Read, Enum, Bounded, Generic, ToJSON, FromJSON)  
+    deriving (Eq, Show, Ord, Enum, Bounded, Generic, ToJSON, FromJSON)  
+
+parseFeatureVariant :: String -> FeatureVariant
+parseFeatureVariant str =
+  let matches = mapMaybe (\fv ->  if str == show fv then Just fv else Nothing ) [minBound @FeatureVariant .. maxBound]
+  in case matches of 
+    fv:_ -> fv
+    _ -> error $ "count not parse feature variant from "<> str <> ". Valid options: "<> show [minBound @FeatureVariant .. maxBound]
 
 
 data FeatName = FeatNameInputRun { fRunFile :: FilePath

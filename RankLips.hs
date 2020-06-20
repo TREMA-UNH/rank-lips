@@ -133,7 +133,7 @@ featureParamsParser :: Parser FeatureParams
 featureParamsParser = FeatureParams 
     <$> option str (long "feature-runs-directory" <> short 'd' <> help "directory containing run files for features" <> metavar "DIR")
     <*> many (option str (long "feature" <> short 'f' <> help "feature name, needs to match filename in feature-runs-directory" <> metavar "FEATURE") )
-    <*> (some (option auto (long "feature-variant" <> metavar "FVAR" 
+    <*> (some (option (parseFeatureVariant <$> str) (long "feature-variant" <> metavar "FVAR" 
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
@@ -155,7 +155,7 @@ defaultFeatureParamsParser =
   where parseFeatureVariantPair :: String -> ReadM (FeatureVariant, Double)
         parseFeatureVariantPair str =
             case Split.splitOn "=" str of
-                [fv, val] ->  return $ (read fv, read val)
+                [fv, val] ->  return $ (parseFeatureVariant fv, read val)
                 _ -> fail $ "Ill-formed FVariant=VALUE format (expecting exactly one '='), got: "<> str
         parseFeaturePair :: String -> ReadM (FeatName, Double)
         parseFeaturePair str =
