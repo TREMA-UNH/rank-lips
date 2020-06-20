@@ -25,12 +25,13 @@ module TrainAndSave where
 
 
 import qualified Data.Aeson as Aeson
-import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
+import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey, FromJSONKeyFunction(FromJSONKeyText))
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
+import Data.Maybe
 
 import Data.Function
 import Data.Bifunctor
@@ -51,6 +52,8 @@ import Debug.Trace as Debug
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
+import Data.Functor.Contravariant (Contravariant(contramap))
 
 
 type Q = SimplirRun.QueryId
@@ -64,8 +67,50 @@ type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)],
 
 
 
+
 data FeatureVariant = FeatScore | FeatRecipRank
     deriving (Eq, Show, Ord,  Read, Enum, Bounded, Generic, ToJSON, FromJSON)  
+
+
+data FeatName = FeatNameInputRun { fRunFile :: FilePath
+                                 , featureVariant:: FeatureVariant
+                                 }
+    deriving (Show, Ord, Eq)
+
+encodeFeatureName :: FeatName -> String
+encodeFeatureName FeatNameInputRun{..} = fRunFile <> "-" <> show featureVariant
+
+instance ToJSON FeatName where
+    toJSON featNameInputRun = Aeson.toJSON $ encodeFeatureName featNameInputRun
+
+instance ToJSONKey FeatName where
+    toJSONKey = contramap encodeFeatureName Aeson.toJSONKey
+
+instance FromJSONKey FeatName where
+    fromJSONKey = FromJSONKeyText parseFeatName
+
+parseFeatName :: T.Text -> FeatName
+parseFeatName str =
+        head' $ mapMaybe matchEnd $ featureVariant'
+      where 
+          matchEnd :: (FeatureVariant, T.Text) -> Maybe FeatName
+          matchEnd (fvariant, fvariant') =
+                if fvariant' `T.isSuffixOf` str
+                    then 
+                        fmap (\s -> FeatNameInputRun {fRunFile = T.unpack s, featureVariant = fvariant} ) $  T.stripSuffix fvariant' str
+                    else Nothing
+
+          featureVariant' :: [(FeatureVariant, T.Text)]    
+          !featureVariant' = [(fv, T.pack $ "-" <> show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
+
+instance FromJSON FeatName where
+    parseJSON (Aeson.String str) = 
+        return $ parseFeatName str
+
+
+    parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
+
+
 
 data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , minibatchParamsOpt :: Maybe MiniBatchParams
@@ -85,6 +130,7 @@ defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing
 
 data DefaultFeatureParams = DefaultFeatureSingleValue { defaultSingleValue :: !Double }
                           | DefaultFeatureVariantValue { defaultFeatureVariant :: [(FeatureVariant, Double)] }
+                          | DefaultFeatureValue { defaultFeatureValue :: [(FeatName, Double)] }
   deriving (Show, Eq, Generic, ToJSON, FromJSON)
 
 data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
@@ -115,6 +161,12 @@ loadRankLipsModel modelFile = do
     case modelOrErr of
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
       Right model -> model
+
+
+
+head' :: HasCallStack => [a] -> a
+head' (x:_) = x
+head' [] = error $ "head': empty list"
 
 
 

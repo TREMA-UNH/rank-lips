@@ -55,7 +55,6 @@ import qualified SimplIR.Format.QRel as QRel
 import TrainAndSave
 
 import Debug.Trace  as Debug
-import Data.Functor.Contravariant (Contravariant(contramap))
 
 type NumResults = Int
 
@@ -64,45 +63,6 @@ type NumResults = Int
 --                     deriving stock (Ord, Eq, Show, Read, Generic)
 --                     deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 
-
-
-data FeatName = FeatNameInputRun { fRunFile :: FilePath
-                                 , featureVariant:: FeatureVariant
-                                 }
-    deriving (Show, Ord, Eq)
-
-encodeFeatureName :: FeatName -> String
-encodeFeatureName FeatNameInputRun{..} = fRunFile <> "-" <> show featureVariant
-
-instance ToJSON FeatName where
-    toJSON featNameInputRun = toJSON $ encodeFeatureName featNameInputRun
-
-instance ToJSONKey FeatName where
-    toJSONKey = contramap encodeFeatureName toJSONKey
-
-instance FromJSONKey FeatName where
-    fromJSONKey = FromJSONKeyText parseFeatName
-
-parseFeatName :: T.Text -> FeatName
-parseFeatName str =
-        head' $ mapMaybe matchEnd $ featureVariant'
-      where 
-          matchEnd :: (FeatureVariant, T.Text) -> Maybe FeatName
-          matchEnd (fvariant, fvariant') =
-                if fvariant' `T.isSuffixOf` str
-                    then 
-                        fmap (\s -> FeatNameInputRun {fRunFile = T.unpack s, featureVariant = fvariant} ) $  T.stripSuffix fvariant' str
-                    else Nothing
-
-          featureVariant' :: [(FeatureVariant, T.Text)]    
-          !featureVariant' = [(fv, T.pack $ "-" <> show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
-
-instance FromJSON FeatName where
-    parseJSON (Data.Aeson.String str) = 
-        return $ parseFeatName str
-
-
-    parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
 
 
 newtype Feat = Feat { featureName :: FeatName}
@@ -181,17 +141,25 @@ featureParamsParser = FeatureParams
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
     ( DefaultFeatureSingleValue 
-          <$> option auto (long "default-feature-value" <> metavar "VALUE" <> value 0.0 
+          <$> option auto (long "default-any-feature-value" <> metavar "VALUE" <> value 0.0 
                           <> help "When any feature is missing for a query/doc pair, this value will be used as feature value, default 0.0. " )
     ) <|>
     ( DefaultFeatureVariantValue
           <$> many ( option ( parseFeatureVariantPair <$> str ) (long "default-feature-variant-value" <> metavar "KEY=VALUE" 
                           <> help "default values for each feature variant in KEY=VALUE format without spaces, example: --default-feature-variant-value FeatureScore=-9999.999"))
+    ) <|>
+    ( DefaultFeatureValue
+          <$> many ( option ( parseFeaturePair <$> str ) (long "default-feature-value" <> metavar "KEY=VALUE" 
+                          <> help "default values for each feature in FNAME-FVariant=VALUE format without spaces, example: --default-feature-value FeatureA-FeatureScore=-9999.999"))
     )
-  where parseFeatureVariantPair :: String -> (FeatureVariant,Double)
+  where parseFeatureVariantPair :: String -> (FeatureVariant, Double)
         parseFeatureVariantPair str =
-            let (fv: (val : _ )) = Debug.trace ("str=" <> str<> "  split="<> (intercalate "  " $ Split.splitOn "=" str)) $ Split.splitOn "=" str
+            let [fv, val] = Split.splitOn "=" str
             in (read fv, read val)
+        parseFeaturePair :: String -> (FeatName, Double)
+        parseFeaturePair str =
+            let [fname, val] = Split.splitOn "=" str
+            in (parseFeatName (T.pack fname), read val)
 
 data FeatureSet = FeatureSet { featureNames :: S.Set Feat
                              , produceFeatures :: FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)]
@@ -429,10 +397,15 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
         F.fromList fspace 
         $ case  defaultFeatureParamsOpt of
             Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
-            Just (DefaultFeatureVariantValue fvVals) -> [ (fname, val )
-                                                        | fname@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
+            Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
+                                                        | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
                                                         , (fv', val) <- fvVals
                                                         , fv' == fv
+                                                        ]
+            Just (DefaultFeatureValue fVals) -> [ (f, val )
+                                                        | f@Feat{featureName = fname} <- F.featureNames fspace
+                                                        , (fname', val) <- fVals
+                                                        , fname' == fname
                                                         ]
             Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
 
@@ -679,10 +652,6 @@ convertOldModel oldModelFile newRankLipsModelFile = do
 --                   deriving (Show)
 
 
-
-head' :: HasCallStack => [a] -> a
-head' (x:_) = x
-head' [] = error $ "head': empty list"
 
 
 
