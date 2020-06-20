@@ -145,21 +145,24 @@ defaultFeatureParamsParser =
                           <> help "When any feature is missing for a query/doc pair, this value will be used as feature value (default: 0.0)." )
     ) <|>
     ( DefaultFeatureVariantValue
-          <$> many ( option ( parseFeatureVariantPair <$> str ) (long "default-feature-variant-value" <> metavar "KEY=VALUE" 
-                          <> help "default values for each feature variant in KEY=VALUE format without spaces, example: --default-feature-variant-value FeatureScore=-9999.999"))
+          <$> many ( option ( parseFeatureVariantPair =<< str ) (long "default-feature-variant-value" <> metavar "FVariant=VALUE" 
+                          <> help "default values for each feature variant in FVariant=VALUE format without spaces, example: --default-feature-variant-value FeatureScore=-9999.999"))
     ) <|>
     ( DefaultFeatureValue
-          <$> many ( option ( parseFeaturePair <$> str ) (long "default-feature-value" <> metavar "KEY=VALUE" 
+          <$> many ( option ( parseFeaturePair =<< str ) (long "default-feature-value" <> metavar "FNAME-FVariant=VALUE" 
                           <> help "default values for each feature in FNAME-FVariant=VALUE format without spaces, example: --default-feature-value FeatureA-FeatureScore=-9999.999"))
     )
-  where parseFeatureVariantPair :: String -> (FeatureVariant, Double)
+  where parseFeatureVariantPair :: String -> ReadM (FeatureVariant, Double)
         parseFeatureVariantPair str =
-            let [fv, val] = Split.splitOn "=" str
-            in (read fv, read val)
-        parseFeaturePair :: String -> (FeatName, Double)
+            case Split.splitOn "=" str of
+                [fv, val] ->  return $ (read fv, read val)
+                _ -> fail $ "Ill-formed FVariant=VALUE format (expecting exactly one '='), got: "<> str
+        parseFeaturePair :: String -> ReadM (FeatName, Double)
         parseFeaturePair str =
-            let [fname, val] = Split.splitOn "=" str
-            in (parseFeatName (T.pack fname), read val)
+            case Split.splitOn "=" str of
+                [fname, val] -> return $ (parseFeatName (T.pack fname), read val)
+                _ -> fail $ "Ill-formed FNAME-FVariant=VALUE format (expecting exactly one '='), got: "<> str
+
 
 data FeatureSet = FeatureSet { featureNames :: S.Set Feat
                              , produceFeatures :: FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)]
