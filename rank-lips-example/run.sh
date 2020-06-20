@@ -21,7 +21,7 @@ TEST_QREL="test.qrel"
 EXPERIMENT_NAME="my first rank-lips experiment"
 
 FEAT_PARAM="--feature-variant FeatScore" 
-OPT_PARAM="--z-score --default-feature-value 100.0 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
+OPT_PARAM="--z-score --default-any-feature-value 0.0 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
 
 
 
@@ -130,4 +130,36 @@ FEAT_PARAM="--feature-variant FeatScore"
 OPT_PARAM="--z-score --convergence-eval-cutoff 2 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+
+
+
+# ---------------------
+
+TRAIN_FEATURE_WITH_MISSING_DIR="./train-features-with-missing"
+
+echo "setting defaults for any missing features"
+OUT_PREFIX_TRAIN="train-missing-features-any"
+
+FEAT_PARAM="--feature-variant FeatScore -f FeatureA -f FeatureB" 
+OPT_PARAM=" --default-any-feature-value 0.0"
+$bin/rank-lips train -d "${TRAIN_FEATURE_WITH_MISSING_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}
+
+
+echo "setting defaults for feature variants for missing features"
+OUT_PREFIX_TRAIN="train-missing-features-variants"
+
+FEAT_PARAM="--feature-variant FeatScore --feature-variant FeatRecipRank" 
+OPT_PARAM=" --default-feature-variant-value FeatRecipRank=100.0 --default-feature-variant-value FeatScore=-9999.99"
+$bin/rank-lips train -d "${TRAIN_FEATURE_WITH_MISSING_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}
+
+
+echo "setting defaults for missing features"
+OUT_PREFIX_TRAIN="train-missing-features"
+
+FEAT_PARAM="--feature-variant FeatScore -f FeatureA -f FeatureB" 
+OPT_PARAM=" --default-feature-value FeatureA-FeatScore=-10.0 --default-feature-value FeatureB-FeatScore=0.0"
+$bin/rank-lips train -d "${TRAIN_FEATURE_WITH_MISSING_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}
 

@@ -40,6 +40,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Maybe
+import qualified Data.List.Split as Split
 import System.Directory
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
@@ -53,8 +54,7 @@ import qualified SimplIR.Format.QRel as QRel
 
 import TrainAndSave
 
--- import Debug.Trace  as Debug
-import Data.Functor.Contravariant (Contravariant(contramap))
+import Debug.Trace  as Debug
 
 type NumResults = Int
 
@@ -63,45 +63,6 @@ type NumResults = Int
 --                     deriving stock (Ord, Eq, Show, Read, Generic)
 --                     deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 
-
-
-data FeatName = FeatNameInputRun { fRunFile :: FilePath
-                                 , featureVariant:: FeatureVariant
-                                 }
-    deriving (Show, Ord, Eq)
-
-encodeFeatureName :: FeatName -> String
-encodeFeatureName FeatNameInputRun{..} = fRunFile <> "-" <> show featureVariant
-
-instance ToJSON FeatName where
-    toJSON featNameInputRun = toJSON $ encodeFeatureName featNameInputRun
-
-instance ToJSONKey FeatName where
-    toJSONKey = contramap encodeFeatureName toJSONKey
-
-instance FromJSONKey FeatName where
-    fromJSONKey = FromJSONKeyText parseFeatName
-
-parseFeatName :: T.Text -> FeatName
-parseFeatName str =
-        head' $ mapMaybe matchEnd $ featureVariant'
-      where 
-          matchEnd :: (FeatureVariant, T.Text) -> Maybe FeatName
-          matchEnd (fvariant, fvariant') =
-                if fvariant' `T.isSuffixOf` str
-                    then 
-                        fmap (\s -> FeatNameInputRun {fRunFile = T.unpack s, featureVariant = fvariant} ) $  T.stripSuffix fvariant' str
-                    else Nothing
-
-          featureVariant' :: [(FeatureVariant, T.Text)]    
-          !featureVariant' = [(fv, T.pack $ "-" <> show fv) | fv <- [minBound @FeatureVariant .. maxBound]]
-
-instance FromJSON FeatName where
-    parseJSON (Data.Aeson.String str) = 
-        return $ parseFeatName str
-
-
-    parseJSON x = fail $ "Can only parse FeatName from string values, received "<> show x
 
 
 newtype Feat = Feat { featureName :: FeatName}
@@ -116,9 +77,6 @@ augmentFname :: FeatureVariant -> FilePath -> Feat
 augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
 
 
-
-data FeatureVariant = FeatScore | FeatRecipRank
-    deriving (Eq, Show, Ord,  Read, Enum, Bounded)  
 
 type RankEntry = SimplirRun.DocumentName
 
@@ -137,7 +95,6 @@ minibatchParser = MiniBatchParams
                         , miniBatchParamsEvalSteps = defEvalSteps
                         } = defaultMiniBatchParams
 
--- defaultConvergence info threshold maxIter dropIter
 
 defaultConvergenceParams :: ConvergenceDiagParams
 defaultConvergenceParams = ConvergenceDiagParams 10e-2 1000 0 (EvalCutoffAt 100) 5 5
@@ -176,16 +133,37 @@ featureParamsParser :: Parser FeatureParams
 featureParamsParser = FeatureParams 
     <$> option str (long "feature-runs-directory" <> short 'd' <> help "directory containing run files for features" <> metavar "DIR")
     <*> many (option str (long "feature" <> short 'f' <> help "feature name, needs to match filename in feature-runs-directory" <> metavar "FEATURE") )
-    <*> (some (option auto (long "feature-variant" <> metavar "FVAR" 
+    <*> (some (option (parseFeatureVariant <$> str) (long "feature-variant" <> metavar "FVAR" 
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
-    DefaultFeatureSingleValue 
-          <$> option auto (long "default-feature-value" <> metavar "VALUE" <> value 0.0 
-                          <> help "When any feature is missing for a query/doc pair, this value will be used as feature value, default 0.0. " )
+    ( DefaultFeatureSingleValue 
+          <$> option auto (long "default-any-feature-value" <> metavar "VALUE" <> value 0.0
+                          <> help "When any feature is missing for a query/doc pair, this value will be used as feature value (default: 0.0)." )
+    ) <|>
+    ( DefaultFeatureVariantValue
+          <$> many ( option ( parseFeatureVariantPair =<< str ) (long "default-feature-variant-value" <> metavar "FVariant=VALUE" 
+                          <> help "default values for each feature variant in FVariant=VALUE format without spaces, example: --default-feature-variant-value FeatureScore=-9999.999"))
+    ) <|>
+    ( DefaultFeatureValue
+          <$> many ( option ( parseFeaturePair =<< str ) (long "default-feature-value" <> metavar "FNAME-FVariant=VALUE" 
+                          <> help "default values for each feature in FNAME-FVariant=VALUE format without spaces, example: --default-feature-value FeatureA-FeatureScore=-9999.999"))
+    )
+  where parseFeatureVariantPair :: String -> ReadM (FeatureVariant, Double)
+        parseFeatureVariantPair str =
+            case Split.splitOn "=" str of
+                [fv, val] ->  return $ (parseFeatureVariant fv, read val)
+                _ -> fail $ "Ill-formed FVariant=VALUE format (expecting exactly one '='), got: "<> str
+        parseFeaturePair :: String -> ReadM (FeatName, Double)
+        parseFeaturePair str =
+            case Split.splitOn "=" str of
+                [fname, val] -> do
+                    fname' <- parseFeatName (T.pack fname)
+                    return (fname', read val)
+                _ -> fail $ "Ill-formed FNAME-FVariant=VALUE format (expecting exactly one '='), got: "<> str
 
 
 data FeatureSet = FeatureSet { featureNames :: S.Set Feat
@@ -340,7 +318,8 @@ opts = subparser
                                 [] -> dirFeatureFiles
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
-            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams
+            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams)
+            
 
     doPredict' =
         f <$> featureParamsParser
@@ -418,6 +397,25 @@ loadQrelInfo qrelFile = do
     return $ QrelInfo{qrelData = qrelData, qrelMap = qrelMap, lookupQrel = lookupQrel, totalRels = totalRels, metric = metric, metricName = "map"}
 
 
+createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
+createDefaultFeatureVec fspace defaultFeatureParamsOpt =
+        F.fromList fspace 
+        $ case  defaultFeatureParamsOpt of
+            Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
+            Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
+                                                        | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
+                                                        , (fv', val) <- fvVals
+                                                        , fv' == fv
+                                                        ]
+            Just (DefaultFeatureValue fVals) -> [ (f, val )
+                                                        | f@Feat{featureName = fname} <- F.featureNames fspace
+                                                        , (fname', val) <- fVals
+                                                        , fname' == fname
+                                                        ]
+            Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
+
+            _ -> error "not implemented yet"
+
 
 doPredict :: forall ph 
             . FeatureParams
@@ -429,12 +427,18 @@ doPredict :: forall ph
 doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
 
     let fspace = modelFeatures model
-
-        defaultFeatureVec :: FeatureVec Feat ph Double
-        defaultFeatureVec = 
-          case  defaultFeatureParamsOpt of
-              Just (DefaultFeatureSingleValue val) ->  F.fromList fspace $ [ (fname, val)  | fname <- F.featureNames fspace]
-              _ -> error "not implemented yet"
+        defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
+        -- defaultFeatureVec :: FeatureVec Feat ph Double
+        -- defaultFeatureVec = 
+        --   F.fromList fspace 
+        --   $ case  defaultFeatureParamsOpt of
+        --       Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
+        --       Just (DefaultFeatureVariantValue fvVals) -> [ (fname, val )
+        --                                                   | fname@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
+        --                                                   , (fv', val) <- fvVals
+        --                                                   , fv' == fv
+        --                                                   ]
+        --       _ -> error "not implemented yet"
 
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
            = featureSet featureParams
@@ -470,9 +474,9 @@ doTrain :: FeatureParams
             -> Bool
             -> Bool
             -> ConvergenceDiagParams
-            -> DefaultFeatureParams
+            -> Maybe DefaultFeatureParams
             -> IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams = do
+doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -484,9 +488,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
     QrelInfo{..} <- loadQrelInfo qrelFile
 
-    let defaultFeatureVec = 
-          case defaultFeatureParams of
-              DefaultFeatureSingleValue val ->  F.fromList fspace $ [ (fname, val)  | fname <- F.featureNames fspace]
+    let defaultFeatureVec =  createDefaultFeatureVec fspace defaultFeatureParamsOpt
 
         featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
@@ -520,7 +522,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
         allDataList = allDataListRaw
 
 
-        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just getRankLipsVersion) (Just defaultFeatureParams)
+        modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just getRankLipsVersion) defaultFeatureParamsOpt
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
@@ -655,10 +657,6 @@ convertOldModel oldModelFile newRankLipsModelFile = do
 --                   deriving (Show)
 
 
-
-head' :: HasCallStack => [a] -> a
-head' (x:_) = x
-head' [] = error $ "head': empty list"
 
 
 
