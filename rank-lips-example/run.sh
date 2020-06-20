@@ -131,3 +131,18 @@ OPT_PARAM="--z-score --convergence-eval-cutoff 2 --convergence-threshold 0.001 -
 
 $bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
 
+
+
+# ---------------------
+
+TRAIN_FEATURE_WITH_MISSING_DIR="./train-features-with-missing"
+
+
+echo "setting defaults for missing features"
+OUT_PREFIX_TRAIN="train-missing-features"
+
+FEAT_PARAM="--feature-variant FeatScore --feature-variant FeatRecipRank" 
+OPT_PARAM="--z-score --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model  --default-feature-variant-value FeatRecipRank=100.0 --default-feature-variant-value FeatScore=-9999.99"
+$bin/rank-lips train -d "${TRAIN_FEATURE_WITH_MISSING_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}
+

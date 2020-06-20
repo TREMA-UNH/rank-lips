@@ -64,21 +64,8 @@ type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)],
 
 
 
--- data RankLipsModel f s = RankLipsModel { --trainedModel :: Model f s
---                                        , minibatchParamsOpt :: Maybe MiniBatchParams
---                                        , evalCutoffOpt :: Maybe EvalCutoff
---                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
---                                        , useZscore :: Maybe Bool
---                                         -- , useCv :: Maybe Bool
---                                        , experimentName :: Maybe String
---                                        }
-
-
--- RankLipsModel {
---   trainedModel :: Model f s
---   , useCv :: Maybe Bool
-
--- }                  
+data FeatureVariant = FeatScore | FeatRecipRank
+    deriving (Eq, Show, Ord,  Read, Enum, Bounded, Generic, ToJSON, FromJSON)  
 
 data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , minibatchParamsOpt :: Maybe MiniBatchParams
@@ -96,7 +83,8 @@ defaultRankLipsModel :: Model f s  -> RankLipsModel f s
 defaultRankLipsModel model = RankLipsModel model Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 
-data DefaultFeatureParams = DefaultFeatureSingleValue !Double
+data DefaultFeatureParams = DefaultFeatureSingleValue { defaultSingleValue :: !Double }
+                          | DefaultFeatureVariantValue { defaultFeatureVariant :: [(FeatureVariant, Double)] }
   deriving (Show, Eq, Generic, ToJSON, FromJSON)
 
 data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams 
