@@ -7,7 +7,7 @@ version:             0.1.1.0
 synopsis:            List-wise learning to rank tool, supports optimization for MAP with mini-batched coordinate ascent.
 -- description:
 -- bug-reports:
---  license:            Apache License 2.0
+--  license:            BSD-3 
 author:              Laura Dietz
 maintainer:          dietz@cs.unh.edu
 -- copyright:
@@ -15,7 +15,10 @@ maintainer:          dietz@cs.unh.edu
 build-type:          Simple
 
 library
-  exposed-modules:     TrainAndSave
+  exposed-modules:     RankLipsTypes
+                       , TrainAndSave
+                       , FeaturesAndSetup
+                       
   hs-source-dirs:      src
   ghc-options:         -Wall
   build-depends:       base,
@@ -33,6 +36,8 @@ library
                        deepseq,
                        parallel,
                        serialise,
+                       filepath,
+                       split,
                        aeson >= 1.4,
                        simplir,
                        simplir-io,
