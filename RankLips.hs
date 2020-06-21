@@ -54,19 +54,13 @@ import SimplIR.FeatureSpace.Normalise
 import qualified SimplIR.Format.QRel as QRel
 
 import RankLipsTypes
+import RankLipsCompat
 import TrainAndSave
 import FeaturesAndSetup
 
 import Debug.Trace  as Debug
 
 type NumResults = Int
-
-
--- newtype FeatureName = FeatureName { getFeatureName :: T.Text }
---                     deriving stock (Ord, Eq, Show, Read, Generic)
---                     deriving newtype (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
-
-
 
 
 type RankEntry = SimplirRun.DocumentName
@@ -185,6 +179,8 @@ gitMsg =  concat [ "[git ", $(gitBranch), "@", $(gitHash)
 getRankLipsVersion :: String
 getRankLipsVersion = "Rank-lips version 1.1"
 
+data ModelVersion = ModelVersionV10 | ModelVersionV11
+    deriving (Eq, Read, Show)
 
 opts :: Parser (IO ())
 opts = subparser
@@ -234,13 +230,19 @@ opts = subparser
           <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
           <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file, if provided, test MAP scores will be reported" <> metavar "QRELS" ))
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
+          <*> flag ModelVersionV11 ModelVersionV10 (long "is-v10-model" <> help "for loading V1.0 rank-lips models")
       where
-        f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath ->  IO()
-        f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile = do
+        f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
+        f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile modelVersion = do
+            let backwardsCompatibleModelLoader =
+                    case modelVersion of
+                        ModelVersionV11 -> loadRankLipsModel modelFile
+                        ModelVersionV10 -> loadRankLipsV10Model modelFile
 
-            (SomeRankLipsModel (lipsModel :: RankLipsModel f ph)) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
+            (SomeRankLipsModel (lipsModel :: RankLipsModel f ph)) <- deserializeRankLipsModel <$> backwardsCompatibleModelLoader
 
-            let model = trainedModel lipsModel
+            let model ::  Model Feat ph
+                model = trainedModel lipsModel
                 fspace = modelFeatures model  
                 modelFeatureFiles = F.featureNames fspace 
 
