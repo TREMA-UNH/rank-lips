@@ -41,3 +41,14 @@ cmd-parameter-test:
       cd rank-lips-example
       ./run.sh
       rm -R out
+
+backwards-compatibility-V10-test:
+  stage: test
+  dependencies:
+    - static-dist
+  script:
+    - |
+      export bin=$(pwd)/result
+      cd eal-experiment
+      ./run-eal.sh
+      rm -R out      
