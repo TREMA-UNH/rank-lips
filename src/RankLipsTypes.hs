@@ -31,7 +31,9 @@ import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
 import Data.Maybe
+import Data.Coerce
 
+import Control.Applicative
 import Data.Function
 import Data.Bifunctor
 import System.Random
@@ -42,6 +44,7 @@ import Control.DeepSeq
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
+import qualified SimplIR.FeatureSpace as F
 
 import qualified SimplIR.Format.QRel as QRel
 import qualified SimplIR.Ranking as Ranking
@@ -53,6 +56,7 @@ import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import Data.Functor.Contravariant (Contravariant(contramap))
+import qualified Data.Aeson.Types as Aeson
 
 
 
@@ -168,13 +172,13 @@ data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
     deriving (Eq, Show)
 
 
-loadRankLipsModel :: (FromJSONKey f, Ord f, Show f) => FilePath -> IO (RankLipsModelSerialized f)
+loadRankLipsModel ::  forall f. (FromJSONKey f, Ord f, Show f) => FilePath -> IO (RankLipsModelSerialized f)
 loadRankLipsModel modelFile = do
-  modelOrErr <- Aeson.eitherDecode  <$> BSL.readFile modelFile 
-  return $
+    modelOrErr <- Aeson.eitherDecode @(RankLipsModelSerialized f)  <$> BSL.readFile modelFile 
     case modelOrErr of
-      Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
-      Right model -> model
+            Right model -> return model
+            Left msg -> fail $ "Issue deserializing v1.1 model from file "<> modelFile<> " because: "<> msg <> ". To load a v1.0 model, please include flag --is-v10-model"
+
 
 
 
