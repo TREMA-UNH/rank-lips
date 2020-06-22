@@ -34,6 +34,7 @@ import Data.Aeson
 import System.Random
 import GHC.Stack
 import System.FilePath
+import Control.Concurrent (setNumCapabilities)
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -212,9 +213,11 @@ opts = subparser
           <*> (flag False True ( long "save-heldout-queries-in-model" <> help "Save heldout query ids in model file (cross-validation only)"))
           <*> convergenceParamParser
           <*> defaultFeatureParamsParser
+          <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> IO()
-        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> IO()
+        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads = do
+            setNumCapabilities numThreads
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
             let features' = case features of

@@ -21,7 +21,7 @@ TEST_QREL="test.qrel"
 EXPERIMENT_NAME="my first rank-lips experiment"
 
 FEAT_PARAM="--feature-variant FeatScore" 
-OPT_PARAM="--z-score --default-any-feature-value 0.0 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model"
+OPT_PARAM="--z-score --default-any-feature-value 0.0 --convergence-threshold 0.001 --mini-batch-size 1000  --folds 2 --restarts 10 --save-heldout-queries-in-model -j 2"
 
 
 
