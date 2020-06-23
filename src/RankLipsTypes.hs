@@ -63,11 +63,11 @@ import qualified Data.Aeson.Types as Aeson
 type Q = SimplirRun.QueryId
 type DocId = SimplirRun.DocumentName
 type Rel = IsRelevant
-type TrainData f s = M.Map Q [(DocId, FeatureVec f s Double, Rel)]
+type TrainData f s q d = M.Map q [(d, FeatureVec f s Double, Rel)]
 
-type FoldRestartResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)],
+type FoldRestartResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel)],
                                     [(Model f s, Double)])
-type BestFoldResults f s = Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
+type BestFoldResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
 
@@ -129,7 +129,7 @@ data RankLipsModel f s = RankLipsModel { trainedModel :: Model f s
                                        , convergenceDiagParameters :: Maybe ConvergenceDiagParams
                                        , useZscore :: Maybe Bool
                                        , cvFold :: Maybe Integer
-                                       , heldoutQueries :: Maybe [SimplirRun.QueryId]
+                                       , heldoutQueries :: Maybe [String]
                                        , experimentName :: Maybe String
                                        , rankLipsVersion :: Maybe String
                                        , defaultFeatureParams :: Maybe DefaultFeatureParams
@@ -149,7 +149,7 @@ data RankLipsMetaField = RankLipsMiniBatch MiniBatchParams
                        | RankLipsConvergenceDiagParams ConvergenceDiagParams
                        | RankLipsUseZScore Bool
                        | RankLipsCVFold Integer
-                       | RankLipsHeldoutQueries [SimplirRun.QueryId]
+                       | RankLipsHeldoutQueries [String]
                        | RankLipsIsFullTrain
                        | RankLipsExperimentName String
                        | RankLipsVersion String

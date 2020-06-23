@@ -22,6 +22,7 @@ library
                        
   hs-source-dirs:      src
   ghc-options:         -Wall
+  ghc-options:         -ddump-simpl -ddump-to-file
   build-depends:       base,
                        hashable,
                        optparse-applicative >= 0.12,
