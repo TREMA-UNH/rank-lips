@@ -212,3 +212,45 @@ data ConvergenceDiagParams = ConvergenceDiagParams { convergenceThreshold :: Dou
                                                   , convergenceFolds :: Int
                                                   }
   deriving (Show, Eq, Generic, FromJSON, ToJSON)
+
+
+
+
+
+serializeRankLipsModel :: forall f ph. RankLipsModel f ph -> RankLipsModelSerialized f
+serializeRankLipsModel RankLipsModel{..} =
+    let rankLipsTrainedModel = SomeModel trainedModel
+        rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
+                                         , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
+                                         , fmap RankLipsUseZScore useZscore
+                                         , fmap RankLipsExperimentName experimentName
+                                         , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
+                                         , fmap RankLipsHeldoutQueries heldoutQueries
+                                         , fmap RankLipsVersion rankLipsVersion
+                                         , fmap RankLipsDefaultFeatures defaultFeatureParams
+                                         ]
+        in RankLipsModelSerialized{..}
+
+
+
+deserializeRankLipsModel ::  RankLipsModelSerialized f -> SomeRankLipsModel f
+deserializeRankLipsModel RankLipsModelSerialized{..} =
+    case rankLipsTrainedModel of
+      SomeModel trainedModel -> 
+        let    rankLipsModel  = foldl' readMeta (defaultRankLipsModel trainedModel) rankLipsMetaData
+        in SomeRankLipsModel rankLipsModel
+  where readMeta :: RankLipsModel f ph -> RankLipsMetaField -> RankLipsModel f ph
+        readMeta rlm metafield =
+          case metafield of
+            RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
+            RankLipsUseZScore flag -> rlm {useZscore = Just flag}
+            RankLipsCVFold fold -> rlm {cvFold = Just fold}
+            RankLipsIsFullTrain -> rlm {cvFold = Nothing}
+            RankLipsExperimentName name -> rlm {experimentName = Just name}
+            RankLipsHeldoutQueries queries -> rlm {heldoutQueries = Just queries}
+            RankLipsConvergenceDiagParams params -> rlm {convergenceDiagParameters = Just params}
+            RankLipsVersion version -> rlm {rankLipsVersion = Just version}
+            RankLipsDefaultFeatures params -> rlm {defaultFeatureParams = Just params}
+            x -> error $ "Don't know how to read metadata field "<> (show x)
+
+

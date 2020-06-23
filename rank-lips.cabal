@@ -7,7 +7,7 @@ version:             0.1.1.0
 synopsis:            List-wise learning to rank tool, supports optimization for MAP with mini-batched coordinate ascent.
 -- description:
 bug-reports:         https://github.com/TREMA-UNH/rank-lips/issues
-license:             BSD-3-Clause
+license:             BSD3
 author:              Laura Dietz
 maintainer:          dietz@cs.unh.edu
 -- copyright:

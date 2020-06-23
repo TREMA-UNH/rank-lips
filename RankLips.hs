@@ -24,42 +24,35 @@
 module Main where
 
 import Development.GitRev
-import Control.DeepSeq hiding (rwhnf)
 import Control.Monad
-import Control.Parallel.Strategies
 import Data.Semigroup hiding (All, Any, option)
 import Options.Applicative
 import qualified Options.Applicative.Help.Pretty as Pretty
-import Data.Aeson
-import System.Random
-import GHC.Stack
 import System.FilePath
 import Control.Concurrent (setNumCapabilities)
 
 import qualified Data.Set as S
-import qualified Data.Map.Strict as M
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Maybe
 import qualified Data.List.Split as Split
 import System.Directory
 
+import Data.Aeson as Aeson
+-- import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BSL
+
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import qualified SimplIR.FeatureSpace as F
-import SimplIR.FeatureSpace (FeatureVec)
-import SimplIR.FeatureSpace.Normalise
 
-import qualified SimplIR.Format.QRel as QRel
 
 import RankLipsTypes
 import RankLipsCompat
-import TrainAndSave
 import FeaturesAndSetup
 
-import Debug.Trace  as Debug
+-- import Debug.Trace  as Debug
 
 type NumResults = Int
 
@@ -145,28 +138,6 @@ defaultFeatureParamsParser =
                     return (fname', read val)
                 _ -> fail $ "Ill-formed FNAME-FVariant=VALUE format (expecting exactly one '='), got: "<> str
 
-
-
-
-deserializeRankLipsModel ::  Show RankLipsMetaField => RankLipsModelSerialized f -> SomeRankLipsModel f
-deserializeRankLipsModel RankLipsModelSerialized{..} =
-    case rankLipsTrainedModel of
-      SomeModel trainedModel -> 
-        let    rankLipsModel  = foldl readMeta (defaultRankLipsModel trainedModel) rankLipsMetaData
-        in SomeRankLipsModel rankLipsModel
-  where readMeta :: RankLipsModel f ph -> RankLipsMetaField -> RankLipsModel f ph
-        readMeta rlm metafield =
-          case metafield of
-            RankLipsMiniBatch params -> rlm {minibatchParamsOpt = Just params}
-            RankLipsUseZScore flag -> rlm {useZscore = Just flag}
-            RankLipsCVFold fold -> rlm {cvFold = Just fold}
-            RankLipsIsFullTrain -> rlm {cvFold = Nothing}
-            RankLipsExperimentName name -> rlm {experimentName = Just name}
-            RankLipsHeldoutQueries queries -> rlm {heldoutQueries = Just queries}
-            RankLipsConvergenceDiagParams params -> rlm {convergenceDiagParameters = Just params}
-            RankLipsVersion version -> rlm {rankLipsVersion = Just version}
-            RankLipsDefaultFeatures params -> rlm {defaultFeatureParams = Just params}
-            x -> error $ "Don't know how to read metadata field "<> (show x)
 
 
 
@@ -276,28 +247,12 @@ opts = subparser
 
 
 
-
-
-
 convertOldModel :: FilePath -> FilePath -> IO()
-convertOldModel oldModelFile newRankLipsModelFile = do
-    undefined
+convertOldModel oldModelFile newModelFile = do
+    (SomeRankLipsModel (convertedLipsModel :: RankLipsModel f ph))  <- deserializeRankLipsModel <$> loadRankLipsV10Model oldModelFile
 
--- convertOldModel oldModelFile newRankLipsModelFile = do
---   SomeModel model <- loadOldModelData @Feat oldModelFile
---   let lipsModel = defaultRankLipsModel model
---   BSL.writeFile newRankLipsModelFile $ Data.Aeson.encode $ lipsModel
-
-
-
-
--- data RankingEntry = RankingEntry { queryId       :: !QueryId
---                                  , documentName  :: !DocumentName
---                                  , documentRank  :: !Rank
---                                  , documentScore :: !Score
---                                  , methodName    :: !MethodName
---                                  }
---                   deriving (Show)
+    let serializedRankLipsModel = serializeRankLipsModel $ convertedLipsModel {rankLipsVersion = Just $ getRankLipsVersion}
+    BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
 
