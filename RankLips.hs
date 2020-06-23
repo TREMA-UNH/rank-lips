@@ -251,7 +251,12 @@ convertOldModel :: FilePath -> FilePath -> IO()
 convertOldModel oldModelFile newModelFile = do
     (SomeRankLipsModel (convertedLipsModel :: RankLipsModel f ph))  <- deserializeRankLipsModel <$> loadRankLipsV10Model oldModelFile
 
-    let serializedRankLipsModel = serializeRankLipsModel $ convertedLipsModel {rankLipsVersion = Just $ getRankLipsVersion}
+    let serializedRankLipsModel = serializeRankLipsModel 
+                                $ convertedLipsModel {rankLipsVersion = Just $ getRankLipsVersion
+                                                                             <> ". (Converted from V1.0 model \'"
+                                                                            <> oldModelFile
+                                                                            <> "\')"
+                                                     }
     BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
