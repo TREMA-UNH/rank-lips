@@ -195,7 +195,7 @@ opts = subparser
                                 [] -> dirFeatureFiles
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
-            doTrain (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) getRankLipsVersion
+            doTrain id id (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) getRankLipsVersion
             
 
     doPredict' =
@@ -234,7 +234,7 @@ opts = subparser
             let revertedModelFeatureFiles = nub $ mapMaybe extractFeatFiles modelFeatureFiles
                 outputFilePrefix = outputDir </> outputPrefix
 
-            doPredict (fparams{features = revertedModelFeatureFiles }) outputFilePrefix (defaultFeatureParams lipsModel) model qrelFileOpt
+            doPredict id id (fparams{features = revertedModelFeatureFiles }) outputFilePrefix (defaultFeatureParams lipsModel) model qrelFileOpt
           where
               extractFeatFiles :: Feat -> Maybe FilePath
               extractFeatFiles (Feat FeatNameInputRun{..}) = Just fRunFile

@@ -61,17 +61,17 @@ type ModelEnvelope f s = Model f s -> RankLipsModelSerialized f
 
 -- --------------------------------------------
 
-trainMe :: forall f s. (Ord f, ToJSONKey f, Show f)
+trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d)
         => Bool
         -> MiniBatchParams
         -> ConvergenceDiagParams
         -> StdGen
-        -> TrainData f s
+        -> TrainData f s q d
         -> FeatureSpace f s
-        -> ScoringMetric IsRelevant Q
+        -> ScoringMetric IsRelevant q
         -> FilePath
         -> FilePath
-        -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model f s -> RankLipsModelSerialized f)
+        -> (Maybe Integer -> Maybe [q] -> Model f s -> RankLipsModelSerialized f)
         -> IO ()
 trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
           -- train me!
@@ -85,13 +85,13 @@ trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric ou
           putStrLn "made folds"
           putStrLn $ unwords [ show $ length f | f <- getFolds folds ]
 
-          let trainFun :: FoldIdx -> TrainData f s -> [(Model f s, Double)]
+          let trainFun :: FoldIdx -> TrainData f s q d -> [(Model f s, Double)]
               trainFun foldIdx =
                   take nRestarts . trainWithRestarts miniBatchParams convDiagParams gen0 metric infoStr fspace
                 where
                   infoStr = show foldIdx
 
-              foldRestartResults :: Folds (M.Map  Q [(DocId, FeatureVec f s Double, Rel)], [(Model f s, Double)])
+              foldRestartResults :: Folds (M.Map  q [(d, FeatureVec f s Double, Rel)], [(Model f s, Double)])
               foldRestartResults = trainKFolds trainFun trainData folds
 
               strat :: Strategy (Folds (a, [(Model f s, Double)]))
@@ -121,14 +121,14 @@ trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric ou
 
 
 trainWithRestarts
-    :: forall f s. (ToJSONKey f, Show f)
+    :: forall f s q d . (ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d)
     => MiniBatchParams
     -> ConvergenceDiagParams
     -> StdGen
-    -> ScoringMetric IsRelevant Q
+    -> ScoringMetric IsRelevant q
     -> String
     -> FeatureSpace f s
-    -> TrainData f s
+    -> TrainData f s q d
     -> [(Model f s, Double)]
        -- ^ an infinite list of restarts
 trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
@@ -149,7 +149,7 @@ trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIt
      in modelsWithTrainScore
 
 
-discardUntrainable :: TrainData f s -> TrainData f s
+discardUntrainable :: TrainData f s q d -> TrainData f s q d
 discardUntrainable evalData =
     M.filter hasPosAndNeg  evalData
   where
@@ -159,37 +159,37 @@ discardUntrainable evalData =
         in hasPos && hasNeg
 
 
-bestPerFold :: FoldRestartResults f s -> BestFoldResults f s
+bestPerFold :: FoldRestartResults f s q d -> BestFoldResults f s q d
 bestPerFold = fmap (second bestModel)
 
 bestModel ::  [(Model f s, Double)] -> (Model f s, Double)
 bestModel = maximumBy (compare `on` snd)
 
 
-bestRankingPerFold :: forall f  s. ()
-                   => BestFoldResults f s
-                   -> Folds (M.Map Q (Ranking SimplIR.LearningToRank.Score (DocId, Rel)))
+bestRankingPerFold :: forall f s q d. ()
+                   => BestFoldResults f s q d
+                   -> Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
 bestRankingPerFold bestPerFold' =
     fmap (\(testData, ~(model, _trainScore))  ->  rerankRankings' model testData) bestPerFold'
 
 
 
 dumpKFoldModelsAndRankings
-    :: forall f s. (Ord f, ToJSONKey f)
-    => FoldRestartResults f s
-    -> ScoringMetric IsRelevant Q
+    :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d)
+    => FoldRestartResults f s q d
+    -> ScoringMetric IsRelevant q
     -> FilePath
     -> FilePath
-    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f s)
+    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f s)
     -> [IO ()]
 dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experimentName modelEnvelope =
-    let bestPerFold' :: Folds (M.Map Q [(DocId, FeatureVec f s Double, Rel)], (Model f s, Double))
+    let bestPerFold' :: Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
         bestPerFold' = bestPerFold foldRestartResults
 
-        bestRankingPerFold' :: Folds (M.Map Q (Ranking SimplIR.LearningToRank.Score (DocId, Rel)))
+        bestRankingPerFold' :: Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
         bestRankingPerFold' = bestRankingPerFold bestPerFold'
 
-        testRanking ::   M.Map Q (Ranking SimplIR.LearningToRank.Score (DocId, Rel))
+        testRanking ::   M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel))
         testRanking = fold bestRankingPerFold'
 
         _testScore = metric testRanking
@@ -221,13 +221,13 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experiment
 
 
 dumpFullModelsAndRankings
-    :: forall f ph. (Ord f, ToJSONKey f)
-    => M.Map Q [(DocId, FeatureVec f ph Double, Rel)]
+    :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d)
+    => M.Map q [(d, FeatureVec f ph Double, Rel)]
     -> (Model f ph, Double)
-    -> ScoringMetric IsRelevant SimplirRun.QueryId
+    -> ScoringMetric IsRelevant q
     -> FilePath
     -> FilePath
-    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
+    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f ph)
     -> [IO()]
 dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope =
     let modelDesc = "train"
@@ -239,12 +239,13 @@ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix 
 
 
 
-l2rRankingToRankEntries :: SimplirRun.MethodName
-                        -> M.Map Q (Ranking SimplIR.LearningToRank.Score (SimplirRun.DocumentName, Rel))
+l2rRankingToRankEntries :: forall q d. (Show q, Show d)
+                        => SimplirRun.MethodName
+                        -> M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel))
                         -> [SimplirRun.RankingEntry]
 l2rRankingToRankEntries methodName rankings =
-  [ SimplirRun.RankingEntry { queryId = query
-                             , documentName = doc
+  [ SimplirRun.RankingEntry { queryId = T.pack $ show query
+                             , documentName = T.pack $ show doc
                              , documentRank = rank
                              , documentScore = rankScore
                              , methodName = methodName
@@ -255,7 +256,7 @@ l2rRankingToRankEntries methodName rankings =
 
 
 -- Train model on all data
-storeModelData :: (ToJSONKey f, Ord f)
+storeModelData :: forall f ph d q. (ToJSONKey f, Ord f)
                => FilePath
                -> FilePath
                -> Model f ph
@@ -285,9 +286,10 @@ loadOldModelData modelFile  = do
 
 
 
-storeRankingData ::  FilePath
-               -> M.Map  Q (Ranking Double (QRel.DocumentName, IsRelevant))
-               -> ScoringMetric IsRelevant Q
+storeRankingData ::  forall q d . (Show q, Show d) 
+                => FilePath
+               -> M.Map  q (Ranking Double (d, IsRelevant))
+               -> ScoringMetric IsRelevant q
                -> String
                -> IO ()
 storeRankingData outputFilePrefix ranking metric modelDesc = do
@@ -298,8 +300,9 @@ storeRankingData outputFilePrefix ranking metric modelDesc = do
        $ ranking
 
 -- todo avoid duplicateion with storeRankingData
-storeRankingDataNoMetric :: FilePath
-                         -> M.Map SimplirRun.QueryId (Ranking Double (QRel.DocumentName, Rel))
+storeRankingDataNoMetric ::   forall q d . (Show q, Show d)
+                          =>  FilePath
+                         -> M.Map q (Ranking Double (d, Rel))
                          -> String
                          -> IO ()
 storeRankingDataNoMetric outputFilePrefix ranking modelDesc = do

@@ -84,7 +84,8 @@ featureSet FeatureParams{..} =
 
 
 
-createModelEnvelope :: (Model f ph -> Model f ph)
+createModelEnvelope :: (Show q)
+                    => (Model f ph -> Model f ph)
                     -> Maybe String
                     -> Maybe MiniBatchParams
                     -> Maybe ConvergenceDiagParams
@@ -92,13 +93,13 @@ createModelEnvelope :: (Model f ph -> Model f ph)
                     -> Maybe Bool
                     -> Maybe String
                     -> Maybe DefaultFeatureParams
-                    -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> ModelEnvelope f ph)
+                    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f ph)
 createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore saveHeldoutQueriesInModel version defaultFeatureParams =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
             rankLipsModel = RankLipsModel { rankLipsVersion = version
                                           , heldoutQueries = if (fromMaybe False saveHeldoutQueriesInModel) 
-                                                                 then heldOutQueries
+                                                                 then fmap (fmap show) heldOutQueries
                                                                  else Nothing
                                           , .. }
         in serializeRankLipsModel rankLipsModel
@@ -107,14 +108,14 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagP
 
 
 
-data QrelInfo = QrelInfo { qrelData :: [QRel.Entry SimplirRun.QueryId SimplirRun.DocumentName IsRelevant]
-                         , qrelMap :: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName IsRelevant)
-                         , lookupQrel :: IsRelevant -> SimplirRun.QueryId -> SimplirRun.DocumentName -> IsRelevant
-                         , totalRels :: M.Map SimplirRun.QueryId Int
-                         , metric :: ScoringMetric IsRelevant SimplirRun.QueryId
+data QrelInfo q d = QrelInfo { qrelData :: [QRel.Entry q d IsRelevant]
+                         , qrelMap :: M.Map q (M.Map d IsRelevant)
+                         , lookupQrel :: IsRelevant -> q -> d -> IsRelevant
+                         , totalRels :: M.Map q Int
+                         , metric :: ScoringMetric IsRelevant q
                          , metricName :: T.Text
                          }
-noQrelInfo :: QrelInfo                         
+noQrelInfo :: (Ord q) => QrelInfo q d                        
 noQrelInfo = QrelInfo { qrelData = []
                       , qrelMap = mempty
                       , lookupQrel = (\rel _q _d -> rel)
@@ -124,18 +125,25 @@ noQrelInfo = QrelInfo { qrelData = []
                       }
 
 
-loadQrelInfo :: FilePath -> IO QrelInfo
-loadQrelInfo qrelFile = do
+loadQrelInfo :: forall q d . (Ord q, Ord d, Show q, Show d)
+             =>  (SimplirRun.QueryId -> q) 
+             -> (SimplirRun.DocumentName -> d) 
+             -> FilePath 
+             -> IO (QrelInfo q d)
+loadQrelInfo convQ convD qrelFile = do
     qrelData <- QRel.readQRel qrelFile
                 :: IO [QRel.Entry SimplirRun.QueryId SimplirRun.DocumentName IsRelevant]
 
-    let qrelMap :: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName IsRelevant)
+
+    let qrelData' :: [QRel.Entry q d IsRelevant]
+        qrelData' = [ QRel.Entry {queryId = (convQ queryId), documentName = (convD documentName), relevance = relevance} | QRel.Entry {..}  <- qrelData]
+        qrelMap :: M.Map q (M.Map d IsRelevant)
         qrelMap = M.fromListWith (<>)
-                [ (queryId, M.singleton documentName relevance)
-                | QRel.Entry {..}  <- qrelData 
+                [ (queryId, M.singleton (documentName) relevance)
+                | QRel.Entry {..}  <- qrelData'
                 ]
 
-        lookupQrel :: IsRelevant -> SimplirRun.QueryId -> SimplirRun.DocumentName -> IsRelevant
+        lookupQrel :: IsRelevant -> q -> d -> IsRelevant
         lookupQrel defaultRel queryId docName =
             case queryId `M.lookup` qrelMap of
                 Nothing -> defaultRel
@@ -143,7 +151,7 @@ loadQrelInfo qrelFile = do
                                 Nothing -> defaultRel
                                 Just r -> r
 
-        totalRels :: M.Map SimplirRun.QueryId Int
+        totalRels :: M.Map q Int
         !totalRels = fmap countRel qrelMap
                     where countRel :: M.Map x IsRelevant -> Int
                           countRel m = length [ r
@@ -151,12 +159,12 @@ loadQrelInfo qrelFile = do
                                                 , QRel.isPositive r
                                                 ]
 
-        metric :: ScoringMetric IsRelevant SimplirRun.QueryId
+        metric :: ScoringMetric IsRelevant q
         metric = meanAvgPrec (\q -> fromMaybe 0 $ q `M.lookup` totalRels)  Relevant
 
 
 
-    return $ QrelInfo{qrelData = qrelData, qrelMap = qrelMap, lookupQrel = lookupQrel, totalRels = totalRels, metric = metric, metricName = "map"}
+    return $ QrelInfo{qrelData = qrelData', qrelMap = qrelMap, lookupQrel = lookupQrel, totalRels = totalRels, metric = metric, metricName = "map"}
 
 
 createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
@@ -179,14 +187,15 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-doPredict :: forall ph 
-            . FeatureParams
+doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d)
+             => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
+            -> FeatureParams
             -> FilePath 
             -> Maybe DefaultFeatureParams
             -> Model Feat ph
             -> Maybe FilePath 
             -> IO () 
-doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
+doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
 
     let fspace = modelFeatures model
         defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
@@ -198,13 +207,13 @@ doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsO
 
     
     QrelInfo{..} <- fromMaybe noQrelInfo 
-             <$> mapM loadQrelInfo qrelFileOpt
+                     <$> mapM (loadQrelInfo convQ convD) qrelFileOpt
 
 
-    let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
+    let featureDataMap = runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runFiles
         featureDataList = fmap M.toList featureDataMap
 
-        allDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
+        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
         allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList
 
         ranking = withStrategy (parTraversable rseq) 
@@ -215,7 +224,9 @@ doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsO
         Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
 
 
-doTrain :: FeatureParams
+doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
+            => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
+            -> FeatureParams
             -> FilePath 
             -> FilePath 
             -> FilePath 
@@ -227,7 +238,7 @@ doTrain :: FeatureParams
             -> Maybe DefaultFeatureParams
             -> String
             -> IO ()
-doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt rankLipsVersion = do
+doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt rankLipsVersion = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -237,12 +248,12 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
     runFiles <- loadRunFiles  featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    QrelInfo{..} <- loadQrelInfo qrelFile
+    QrelInfo{..} <- loadQrelInfo convQ convD qrelFile
 
     let defaultFeatureVec =  createDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
-        featureDataList :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
+        featureDataMap = runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runFiles
+        featureDataList :: M.Map q [( d, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
         (featureDataList', createModelEnvelope') =
@@ -253,7 +264,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
                                             | (_, list )<- M.toList featureDataList
                                             , (_, feat ) <- list
                                             ]
-                        featureDataListZscore :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
+                        featureDataListZscore :: M.Map q [( d, (F.FeatureVec Feat ph Double))] 
                         featureDataListZscore = fmap normDocs featureDataList
                           where normDocs list =
                                     [ (doc, (normFeatures zNorm) feat)
@@ -266,7 +277,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
 
                 else (featureDataList, createModelEnvelope id)
 
-        allDataListRaw :: M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, FeatureVec Feat ph Double, Rel)]
+        allDataListRaw :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
         allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
 
         allDataList = allDataListRaw
@@ -277,17 +288,18 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
-train :: Bool
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
+      =>  Bool
       -> F.FeatureSpace Feat ph
-      -> TrainData Feat ph
-      -> [QRel.Entry SimplirRun.QueryId doc IsRelevant]
+      -> TrainData Feat ph q d
+      -> [QRel.Entry q d IsRelevant]
       -> MiniBatchParams
       -> ConvergenceDiagParams
       -> FilePath
-      -> (Maybe Integer -> Maybe [SimplirRun.QueryId] -> Model Feat ph -> RankLipsModelSerialized Feat)
+      -> (Maybe Integer -> Maybe [q] -> Model Feat ph -> RankLipsModelSerialized Feat)
       -> IO()
 train includeCv fspace allData qrel miniBatchParams convergenceDiagParams outputFilePrefix modelEnvelope =  do
-    let metric :: ScoringMetric IsRelevant SimplirRun.QueryId
+    let metric :: ScoringMetric IsRelevant q
         !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
         totalElems = getSum . foldMap ( Sum . length ) $ allData
         totalPos = getSum . foldMap ( Sum . length . filter (\(_,_,rel) -> rel == Relevant)) $ allData
@@ -296,7 +308,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
     putStrLn $ "Training model with (trainData) "++ show (M.size allData) ++
             " queries and "++ show totalElems ++" items total of which "++
             show totalPos ++" are positive."
-    let displayTrainData :: Show f => TrainData f ph -> [String]
+    let displayTrainData :: Show f => TrainData f ph q d -> [String]
         displayTrainData trainData =
             [ show k ++ " " ++ show d ++ " " ++ show r ++ " -> "++ prettyFv
             | (k,list) <- M.toList trainData
@@ -317,28 +329,29 @@ loadRunFiles prefix inputRuns = do
     mapM (\fname -> (fname,) <$> SimplirRun.readRunFile (prefix </> fname)) inputRuns    
                 
 
-augmentWithQrelsMap_ :: (SimplirRun.QueryId -> SimplirRun.DocumentName -> Rel) 
-                 -> M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double)) 
-                 -> M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double, Rel))
-augmentWithQrelsMap_ lookupQrel qData =
-    M.mapWithKey mapQueries qData
-  where mapQueries :: SimplirRun.QueryId -> (M.Map SimplirRun.DocumentName d) -> M.Map SimplirRun.DocumentName (d, Rel)
-        mapQueries query dMap =
-            M.mapWithKey mapDocs dMap
-          where mapDocs :: SimplirRun.DocumentName -> d -> (d,Rel)
-                mapDocs doc feats =
-                    (feats, lookupQrel query doc)
+-- augmentWithQrelsMap_ :: (q -> d -> Rel) 
+--                  -> M.Map q (M.Map d (F.FeatureVec Feat ph Double)) 
+--                  -> M.Map q (M.Map d (F.FeatureVec Feat ph Double, Rel))
+-- augmentWithQrelsMap_ lookupQrel qData =
+--     M.mapWithKey mapQueries qData
+--   where mapQueries :: q -> (M.Map d d) -> M.Map d (d, Rel)
+--         mapQueries query dMap =
+--             M.mapWithKey mapDocs dMap
+--           where mapDocs :: d -> d -> (d,Rel)
+--                 mapDocs doc feats =
+--                     (feats, lookupQrel query doc)
 
 
-augmentWithQrelsList_ :: (SimplirRun.QueryId -> SimplirRun.DocumentName -> Rel) 
-                 -> M.Map SimplirRun.QueryId [( SimplirRun.DocumentName, (F.FeatureVec Feat ph Double))] 
-                 -> M.Map SimplirRun.QueryId [(SimplirRun.DocumentName, F.FeatureVec Feat ph Double, Rel)]
+augmentWithQrelsList_ ::  forall ph q d
+                 . (q -> d -> Rel) 
+                 -> M.Map q [( d, (F.FeatureVec Feat ph Double))] 
+                 -> M.Map q [(d, F.FeatureVec Feat ph Double, Rel)]
 augmentWithQrelsList_ lookupQrel qData =
     M.mapWithKey mapQueries qData
-  where mapQueries :: SimplirRun.QueryId -> [(SimplirRun.DocumentName, d)] -> [(SimplirRun.DocumentName, d, Rel)]
+  where mapQueries :: q -> [(d, F.FeatureVec Feat ph Double)] -> [(d, F.FeatureVec Feat ph Double, Rel)]
         mapQueries query dMap =
             fmap mapDocs dMap
-          where mapDocs :: (SimplirRun.DocumentName, d) -> (SimplirRun.DocumentName, d,Rel)
+          where mapDocs :: (d,  F.FeatureVec Feat ph Double) -> (d,  F.FeatureVec Feat ph Double ,Rel)
                 mapDocs (doc, feats) =
                     (doc, feats, lookupQrel query doc)
 
@@ -354,17 +367,19 @@ internFeatures fspace features =
             Nothing -> error $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
 
 
-runFilesToFeatureVectorsMap :: forall ph . F.FeatureSpace Feat ph 
+runFilesToFeatureVectorsMap :: forall ph q d . (Ord q, Ord d)
+                          => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
+                          ->  F.FeatureSpace Feat ph 
                           -> F.FeatureVec Feat ph Double
                           -> (FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)])
                           -> [(FilePath, [SimplirRun.RankingEntry])] 
-                          -> M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double))
-runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData = 
-    let features:: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName [(Feat, Double)]) 
+                          -> M.Map q (M.Map d (F.FeatureVec Feat ph Double))
+runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runData = 
+    let features:: M.Map q (M.Map d [(Feat, Double)]) 
         features = M.fromListWith (M.unionWith (<>))
-                 $ [ (queryId, 
+                 $ [ (convQ queryId, 
                         M.fromListWith (<>)
-                        [( documentName 
+                        [( convD documentName 
                          , internFeatures fspace $ produceFeatures fname entry
                         )]
                       )
@@ -372,11 +387,11 @@ runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData =
                     , entry@SimplirRun.RankingEntry {..} <- rankingEntries
                     ]
 
-        featureVectors :: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double))
+        featureVectors :: M.Map q (M.Map d (F.FeatureVec Feat ph Double))
         featureVectors =  fmap featureVectorize features           
 
     in featureVectors
-  where featureVectorize :: M.Map SimplirRun.DocumentName [(Feat, Double)] -> M.Map SimplirRun.DocumentName (FeatureVec Feat ph Double)
+  where featureVectorize :: M.Map d [(Feat, Double)] -> M.Map d (FeatureVec Feat ph Double)
         featureVectorize docFeatureList =
             fmap (F.modify defaultFeatureVec) docFeatureList
 
