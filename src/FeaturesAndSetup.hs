@@ -24,24 +24,16 @@
 module FeaturesAndSetup where
 
 import Control.DeepSeq hiding (rwhnf)
-import Control.Monad
 import Control.Parallel.Strategies
 import Data.Semigroup hiding (All, Any, option)
-import Options.Applicative
-import qualified Options.Applicative.Help.Pretty as Pretty
-import Data.Aeson
 import System.Random
-import GHC.Stack
 import System.FilePath
 
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Maybe
-import qualified Data.List.Split as Split
--- import System.Directory
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import SimplIR.LearningToRank
@@ -104,19 +96,12 @@ createModelEnvelope :: (Model f ph -> Model f ph)
 createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagParameters useZscore saveHeldoutQueriesInModel version defaultFeatureParams =
     (\cvFold heldOutQueries someModel' -> 
         let trainedModel = modelConv someModel'
-            rankLipsTrainedModel = SomeModel trainedModel
-            rankLipsMetaData = catMaybes [ fmap RankLipsMiniBatch minibatchParamsOpt
-                                         , fmap RankLipsConvergenceDiagParams convergenceDiagParameters
-                                         , fmap RankLipsUseZScore useZscore
-                                         , fmap RankLipsExperimentName experimentName
-                                         , fmap RankLipsCVFold cvFold, if cvFold == Nothing then Just RankLipsIsFullTrain else Nothing
-                                         , if (fromMaybe False saveHeldoutQueriesInModel) 
-                                             then fmap RankLipsHeldoutQueries heldOutQueries
-                                             else Nothing
-                                         , fmap RankLipsVersion version
-                                         , fmap RankLipsDefaultFeatures defaultFeatureParams
-                                         ]
-        in RankLipsModelSerialized{..}
+            rankLipsModel = RankLipsModel { rankLipsVersion = version
+                                          , heldoutQueries = if (fromMaybe False saveHeldoutQueriesInModel) 
+                                                                 then heldOutQueries
+                                                                 else Nothing
+                                          , .. }
+        in serializeRankLipsModel rankLipsModel
     )
 
 
@@ -191,7 +176,7 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
                                                         ]
             Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
 
-            _ -> error "not implemented yet"
+            x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
 doPredict :: forall ph 
@@ -205,18 +190,6 @@ doPredict featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsO
 
     let fspace = modelFeatures model
         defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
-        -- defaultFeatureVec :: FeatureVec Feat ph Double
-        -- defaultFeatureVec = 
-        --   F.fromList fspace 
-        --   $ case  defaultFeatureParamsOpt of
-        --       Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
-        --       Just (DefaultFeatureVariantValue fvVals) -> [ (fname, val )
-        --                                                   | fname@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
-        --                                                   , (fv', val) <- fvVals
-        --                                                   , fv' == fv
-        --                                                   ]
-        --       _ -> error "not implemented yet"
-
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
            = featureSet featureParams
 
@@ -275,8 +248,7 @@ doTrain featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile
         (featureDataList', createModelEnvelope') =
             if useZScore
                 then
-                    let -- Todo: save norm parameter, so we can use it during prediction    
-                        zNorm :: Normalisation Feat ph Double
+                    let zNorm :: Normalisation Feat ph Double
                         zNorm = zNormalizer $ [ feat
                                             | (_, list )<- M.toList featureDataList
                                             , (_, feat ) <- list
@@ -399,7 +371,6 @@ runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData =
                     | (fname, rankingEntries) <- runData
                     , entry@SimplirRun.RankingEntry {..} <- rankingEntries
                     ]
-                    -- ToDo Where are default values handled?
 
         featureVectors :: M.Map SimplirRun.QueryId (M.Map SimplirRun.DocumentName (F.FeatureVec Feat ph Double))
         featureVectors =  fmap featureVectorize features           
