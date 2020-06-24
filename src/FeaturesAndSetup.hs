@@ -46,6 +46,11 @@ import qualified SimplIR.Format.QRel as QRel
 
 import TrainAndSave
 import RankLipsTypes
+import Data.Bifunctor (Bifunctor(second))
+import GHC.Generics (Generic)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 
 
 convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
@@ -61,13 +66,13 @@ augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
 
 
 
-featureSet :: FeatureParams -> FeatureSet
+featureSet :: FeatureParams -> FeatureSet q d
 featureSet FeatureParams{..} =
     let
         featureNames :: S.Set Feat
         featureNames = convertFeatureNames featureVariants features 
 
-        produceFeatures :: FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)]
+        produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
         produceFeatures fname SimplirRun.RankingEntry{..} =
             [ produceFeature ft
             | ft <- featureVariants
@@ -187,7 +192,7 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d)
+doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d, Aeson.FromJSON q, Aeson.FromJSON d)
              => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
             -> FilePath 
@@ -202,7 +207,10 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
            = featureSet featureParams
 
-    runFiles <- loadRunFiles  featureRunsDirectory features
+    runFiles <- if featuresFromJsonL
+                    then loadRunFiles convQ convD featureRunsDirectory features
+                    else loadJsonLRunFiles featureRunsDirectory features
+
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     
@@ -210,7 +218,7 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
                      <$> mapM (loadQrelInfo convQ convD) qrelFileOpt
 
 
-    let featureDataMap = runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runFiles
+    let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList = fmap M.toList featureDataMap
 
         allDataList :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
@@ -224,7 +232,7 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
         Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
 
 
-doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
+doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d, Render q, Render d)
             => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
             -> FilePath 
@@ -238,21 +246,25 @@ doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
             -> Maybe DefaultFeatureParams
             -> String
             -> IO ()
-doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt rankLipsVersion = do
+doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile 
+        miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams 
+        defaultFeatureParamsOpt rankLipsVersion = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
-    runFiles <- loadRunFiles  featureRunsDirectory features
+    runFiles <- if featuresFromJsonL
+                    then loadRunFiles convQ convD featureRunsDirectory features
+                    else loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     QrelInfo{..} <- loadQrelInfo convQ convD qrelFile
 
     let defaultFeatureVec =  createDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runFiles
+        featureDataMap = runFilesToFeatureVectorsMap  fspace defaultFeatureVec produceFeatures runFiles
         featureDataList :: M.Map q [( d, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
@@ -288,7 +300,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
-train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d)
       =>  Bool
       -> F.FeatureSpace Feat ph
       -> TrainData Feat ph q d
@@ -324,22 +336,65 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
 
 
-loadRunFiles :: FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry])] 
-loadRunFiles prefix inputRuns = do
-    mapM (\fname -> (fname,) <$> SimplirRun.readRunFile (prefix </> fname)) inputRuns    
-                
+loadRunFiles :: forall q d 
+             .  (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
+             -> FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
+loadRunFiles convQ convD prefix inputRuns = do
+    fmap (second (map conv)) 
+    <$> mapM (\fname -> (fname,)
+    <$> SimplirRun.readRunFile (prefix </> fname)) inputRuns    
+  where conv :: SimplirRun.RankingEntry -> SimplirRun.RankingEntry' q d    
+        conv SimplirRun.RankingEntry{..} =
+            SimplirRun.RankingEntry{ queryId= convQ queryId
+                                    , documentName = convD documentName
+                                    , .. }
 
--- augmentWithQrelsMap_ :: (q -> d -> Rel) 
---                  -> M.Map q (M.Map d (F.FeatureVec Feat ph Double)) 
---                  -> M.Map q (M.Map d (F.FeatureVec Feat ph Double, Rel))
--- augmentWithQrelsMap_ lookupQrel qData =
---     M.mapWithKey mapQueries qData
---   where mapQueries :: q -> (M.Map d d) -> M.Map d (d, Rel)
---         mapQueries query dMap =
---             M.mapWithKey mapDocs dMap
---           where mapDocs :: d -> d -> (d,Rel)
---                 mapDocs doc feats =
---                     (feats, lookupQrel query doc)
+newtype SerializedRankingEntry q d = SerializedRankingEntry { unserializeRankingEntry :: SimplirRun.RankingEntry' q d }
+    deriving (Show, Generic)
+
+instance (Aeson.FromJSON q, Aeson.FromJSON d) 
+        => Aeson.FromJSON (SerializedRankingEntry q d) where
+    parseJSON = Aeson.withObject "SerializedRankingEntry" $ \content -> do
+        queryId <- content Aeson..: "query"
+        documentName <- content Aeson..: "document"
+        documentRank <- content Aeson..: "rank"    
+        documentScore <- content Aeson..: "score"
+        methodName <- fromMaybe "" <$> content Aeson..:? "method"      
+        return $ SerializedRankingEntry (SimplirRun.RankingEntry{..})
+
+instance (Aeson.ToJSON q, Aeson.ToJSON d) 
+        => Aeson.ToJSON (SerializedRankingEntry q d) where
+    toJSON (SerializedRankingEntry (SimplirRun.RankingEntry{..})) =
+        Aeson.object $ [ "query" Aeson..= queryId
+                       , "document" Aeson..= documentName
+                       , "rank" Aeson..= documentRank
+                       , "score" Aeson..= documentScore
+                       ] <> case methodName of
+                                "" -> []
+                                name -> ["method" Aeson..= name]
+    
+loadJsonLRunFiles :: forall q d 
+                  . (Aeson.FromJSON q, Aeson.FromJSON d)
+                  => FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
+loadJsonLRunFiles prefix inputRuns = do
+    mapM (\fname -> (fname,)
+        <$> readJsonLRunFile (prefix </> fname)) inputRuns    
+  where readJsonLRunFile :: FilePath -> IO (([SimplirRun.RankingEntry' q d]))
+        readJsonLRunFile fname = do
+            bs <- BSL.readFile fname
+            let decodeRankingEntry :: BSL.ByteString -> IO (SimplirRun.RankingEntry' q d)
+                decodeRankingEntry bs = either fail (return . unserializeRankingEntry ) 
+                                      $ Aeson.eitherDecode bs
+            mapM decodeRankingEntry (BSL.lines bs)
+
+writeJsonLRunFile :: forall q d
+                  . (Aeson.ToJSON q, Aeson.ToJSON d)
+                  => FilePath -> [SimplirRun.RankingEntry' q d] -> IO()
+writeJsonLRunFile filename runEntries = do
+    let lines :: [BSL.ByteString]
+        lines = fmap (Aeson.encode . SerializedRankingEntry) $ runEntries
+    BSL.writeFile filename $ BSL.unlines $ lines
+
 
 
 augmentWithQrelsList_ ::  forall ph q d
@@ -368,18 +423,17 @@ internFeatures fspace features =
 
 
 runFilesToFeatureVectorsMap :: forall ph q d . (Ord q, Ord d)
-                          => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
-                          ->  F.FeatureSpace Feat ph 
+                          => F.FeatureSpace Feat ph 
                           -> F.FeatureVec Feat ph Double
-                          -> (FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)])
-                          -> [(FilePath, [SimplirRun.RankingEntry])] 
+                          -> (FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)])
+                          -> [(FilePath, [SimplirRun.RankingEntry' q d])] 
                           -> M.Map q (M.Map d (F.FeatureVec Feat ph Double))
-runFilesToFeatureVectorsMap convQ convD fspace defaultFeatureVec produceFeatures runData = 
+runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData = 
     let features:: M.Map q (M.Map d [(Feat, Double)]) 
         features = M.fromListWith (M.unionWith (<>))
-                 $ [ (convQ queryId, 
+                 $ [ ( queryId, 
                         M.fromListWith (<>)
-                        [( convD documentName 
+                        [( documentName 
                          , internFeatures fspace $ produceFeatures fname entry
                         )]
                       )

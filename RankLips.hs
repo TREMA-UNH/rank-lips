@@ -39,7 +39,6 @@ import qualified Data.List.Split as Split
 import System.Directory
 
 import Data.Aeson as Aeson
--- import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
@@ -54,10 +53,6 @@ import FeaturesAndSetup
 
 -- import Debug.Trace  as Debug
 
-type NumResults = Int
-
-
-type RankEntry = SimplirRun.DocumentName
 
 
 minibatchParser :: Parser MiniBatchParams
@@ -110,6 +105,7 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
+    <*> flag True False  (long "jsonl-run" <> help "Load data from jsonl file instead of trec_eval run file")   
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
@@ -160,6 +156,7 @@ opts = subparser
     <> cmd "predict"        doPredict'
     <> cmd "convert-old-model"        doConvertModel'
     <> cmd "version" doPrintVersion
+    <> cmd "convert-features" doConvertFeatures'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -206,7 +203,7 @@ opts = subparser
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
           <*> flag ModelVersionV11 ModelVersionV10 (long "is-v10-model" <> help "for loading V1.0 rank-lips models")
       where
-        f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
+        f :: FeatureParams ->  FilePath ->   FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
         f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile modelVersion = do
             let backwardsCompatibleModelLoader =
                     case modelVersion of
@@ -245,6 +242,17 @@ opts = subparser
              <$> argument str (metavar "FILE" <> help "old model file")
              <*> option str (long "output" <> short 'o' <> metavar "OUT" <> help "file where new model will be written to")
 
+    doConvertFeatures' =
+        doConvertFeatures
+             <$> option str (short 'd' <> long "input-dir" <> metavar "IN-DIR" <> help "directory of old feature files")
+             <*> many (argument str ( metavar "FILE" <> help "filenames of feature files"))
+             <*> option str (long "output" <> short 'o' <> metavar "OUT-DIR" <> help "directory where new features will be written to")
+             <*> (flag' OldRunToJsonLMode (long "old-run-features-to-jsonl")
+                 <|> flag' JsonLRunToTrecEval (long "jsonl-run-to-trec-eval")
+                 )
+             
+data ConvertFeatureMode = OldRunToJsonLMode | JsonLRunToTrecEval
+    deriving (Eq, Show)
 
 
 convertOldModel :: FilePath -> FilePath -> IO()
@@ -260,9 +268,17 @@ convertOldModel oldModelFile newModelFile = do
     BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
-
-
-
+doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> ConvertFeatureMode-> IO()
+doConvertFeatures oldDir filenames  newDir OldRunToJsonLMode = do
+    runs <- loadRunFiles id id oldDir filenames
+    forM_ runs (\(fname, content) ->
+            writeJsonLRunFile (newDir</>fname) content
+        ) 
+doConvertFeatures oldDir filenames  newDir JsonLRunToTrecEval = do
+    runs <- loadJsonLRunFiles oldDir filenames
+    forM_ runs (\(fname, content) ->
+            SimplirRun.writeRunFile (newDir</>fname) content
+        ) 
 
 main :: IO ()
 main = join $ execParser $ info (helper <*> opts) (progDescDoc (Just desc) <> fullDesc)

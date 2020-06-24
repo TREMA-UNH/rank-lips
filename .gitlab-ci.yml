@@ -52,3 +52,15 @@ backwards-compatibility-V10-test:
       cd eal-experiment
       ./run-eal.sh
       rm -R out      
+
+jsonl-cmd-parameter-test:
+  stage: test
+  dependencies:
+    - static-dist
+  script:
+    - sudo apk add jq
+    - |
+      export bin=$(pwd)/result
+      cd rank-lips-jsonl-example
+      ./run-jsonl.sh
+      rm -R out
