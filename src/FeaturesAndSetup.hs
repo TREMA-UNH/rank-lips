@@ -192,7 +192,7 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d)
+doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d, Aeson.FromJSON q, Aeson.FromJSON d)
              => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
             -> FilePath 
@@ -207,7 +207,10 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
            = featureSet featureParams
 
-    runFiles <- loadRunFiles convQ convD  featureRunsDirectory features
+    runFiles <- if featuresFromJsonL
+                    then loadRunFiles convQ convD featureRunsDirectory features
+                    else loadJsonLRunFiles featureRunsDirectory features
+
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     
@@ -243,7 +246,9 @@ doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson
             -> Maybe DefaultFeatureParams
             -> String
             -> IO ()
-doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt rankLipsVersion = do
+doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile 
+        miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams 
+        defaultFeatureParamsOpt rankLipsVersion = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
