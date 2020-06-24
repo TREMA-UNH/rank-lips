@@ -3,7 +3,8 @@
 set -x
 set -e
 
-
+mkdir -p train-features
+mkdir -p test-features
 $bin/rank-lips convert-features -d ../rank-lips-example/train-features FeatureA FeatureB FeatureC -o train-features
 $bin/rank-lips convert-features -d ../rank-lips-example/test-features FeatureA FeatureB FeatureC -o test-features
 
