@@ -1,0 +1,10 @@
+{"score":1.1260205582047185,"method":"run","document":"doc1","query":"Q10","rank":2}
+{"score":0.12791714506366933,"method":"run","document":"doc2","query":"Q10","rank":3}
+{"score":5.8650368537107665e-2,"method":"run","document":"doc3","query":"Q10","rank":4}
+{"score":0.12812763111790382,"method":"run","document":"doc4","query":"Q11","rank":1}
+{"score":0.12473655832697028,"method":"run","document":"doc5","query":"Q11","rank":2}
+{"score":5.857586682893541e-2,"method":"run","document":"doc6","query":"Q11","rank":3}
+{"score":4.349879355099102e-2,"method":"run","document":"doc7","query":"Q11","rank":4}
+{"score":1.703751870875434e-2,"method":"run","document":"doc8","query":"Q11","rank":5}
+{"score":7.661638465997552e-4,"method":"run","document":"doc9","query":"Q11","rank":6}
+{"score":5.406552197017847e-4,"method":"run","document":"doc10","query":"Q11","rank":7}
