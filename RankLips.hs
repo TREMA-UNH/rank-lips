@@ -247,7 +247,12 @@ opts = subparser
              <$> option str (short 'd' <> long "input-dir" <> metavar "IN-DIR" <> help "directory of old feature files")
              <*> many (argument str ( metavar "FILE" <> help "filenames of feature files"))
              <*> option str (long "output" <> short 'o' <> metavar "OUT-DIR" <> help "directory where new features will be written to")
-
+             <*> (flag' OldRunToJsonLMode (long "old-run-features-to-jsonl")
+                 <|> flag' JsonLRunToTrecEval (long "jsonl-run-to-trec-eval")
+                 )
+             
+data ConvertFeatureMode = OldRunToJsonLMode | JsonLRunToTrecEval
+    deriving (Eq, Show)
 
 
 convertOldModel :: FilePath -> FilePath -> IO()
@@ -263,11 +268,16 @@ convertOldModel oldModelFile newModelFile = do
     BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
-doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> IO()
-doConvertFeatures oldDir filenames  newDir = do
+doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> ConvertFeatureMode-> IO()
+doConvertFeatures oldDir filenames  newDir OldRunToJsonLMode = do
     runs <- loadRunFiles id id oldDir filenames
     forM_ runs (\(fname, content) ->
             writeJsonLRunFile (newDir</>fname) content
+        ) 
+doConvertFeatures oldDir filenames  newDir JsonLRunToTrecEval = do
+    runs <- loadJsonLRunFiles oldDir filenames
+    forM_ runs (\(fname, content) ->
+            SimplirRun.writeRunFile (newDir</>fname) content
         ) 
 
 main :: IO ()
