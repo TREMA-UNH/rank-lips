@@ -61,7 +61,7 @@ type ModelEnvelope f s = Model f s -> RankLipsModelSerialized f
 
 -- --------------------------------------------
 
-trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d)
+trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
         => Bool
         -> MiniBatchParams
         -> ConvergenceDiagParams
@@ -121,7 +121,7 @@ trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric ou
 
 
 trainWithRestarts
-    :: forall f s q d . (ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d)
+    :: forall f s q d . (ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
     => MiniBatchParams
     -> ConvergenceDiagParams
     -> StdGen
@@ -175,7 +175,7 @@ bestRankingPerFold bestPerFold' =
 
 
 dumpKFoldModelsAndRankings
-    :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d)
+    :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
     => FoldRestartResults f s q d
     -> ScoringMetric IsRelevant q
     -> FilePath
@@ -221,7 +221,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experiment
 
 
 dumpFullModelsAndRankings
-    :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d)
+    :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
     => M.Map q [(d, FeatureVec f ph Double, Rel)]
     -> (Model f ph, Double)
     -> ScoringMetric IsRelevant q
@@ -239,13 +239,13 @@ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix 
 
 
 
-l2rRankingToRankEntries :: forall q d. (Show q, Show d)
+l2rRankingToRankEntries :: forall q d. (Render q, Render d)
                         => SimplirRun.MethodName
                         -> M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel))
                         -> [SimplirRun.RankingEntry]
 l2rRankingToRankEntries methodName rankings =
-  [ SimplirRun.RankingEntry { queryId = T.pack $ show query
-                             , documentName = T.pack $ show doc
+  [ SimplirRun.RankingEntry { queryId = render query
+                             , documentName = render doc
                              , documentRank = rank
                              , documentScore = rankScore
                              , methodName = methodName
@@ -286,7 +286,7 @@ loadOldModelData modelFile  = do
 
 
 
-storeRankingData ::  forall q d . (Show q, Show d) 
+storeRankingData ::  forall q d . (Show q, Show d, Render q, Render d) 
                 => FilePath
                -> M.Map  q (Ranking Double (d, IsRelevant))
                -> ScoringMetric IsRelevant q
@@ -300,7 +300,7 @@ storeRankingData outputFilePrefix ranking metric modelDesc = do
        $ ranking
 
 -- todo avoid duplicateion with storeRankingData
-storeRankingDataNoMetric ::   forall q d . (Show q, Show d)
+storeRankingDataNoMetric ::   forall q d . (Show q, Show d, Render q, Render d)
                           =>  FilePath
                          -> M.Map q (Ranking Double (d, Rel))
                          -> String

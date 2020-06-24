@@ -156,6 +156,7 @@ opts = subparser
     <> cmd "predict"        doPredict'
     <> cmd "convert-old-model"        doConvertModel'
     <> cmd "version" doPrintVersion
+    <> cmd "convert-features" doConvertFeatures'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -241,6 +242,12 @@ opts = subparser
              <$> argument str (metavar "FILE" <> help "old model file")
              <*> option str (long "output" <> short 'o' <> metavar "OUT" <> help "file where new model will be written to")
 
+    doConvertFeatures' =
+        doConvertFeatures
+             <$> option str (short 'd' <> long "input-dir" <> metavar "IN-DIR" <> help "directory of old feature files")
+             <*> many (argument str ( metavar "FILE" <> help "filenames of feature files"))
+             <*> option str (long "output" <> short 'o' <> metavar "OUT-DIR" <> help "directory where new features will be written to")
+
 
 
 convertOldModel :: FilePath -> FilePath -> IO()
@@ -256,9 +263,12 @@ convertOldModel oldModelFile newModelFile = do
     BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
-
-
-
+doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> IO()
+doConvertFeatures oldDir filenames  newDir = do
+    runs <- loadRunFiles id id oldDir filenames
+    forM_ runs (\(fname, content) ->
+            writeJsonLRunFile (newDir</>fname) content
+        ) 
 
 main :: IO ()
 main = join $ execParser $ info (helper <*> opts) (progDescDoc (Just desc) <> fullDesc)

@@ -192,7 +192,7 @@ createDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d)
+doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d)
              => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
             -> FilePath 
@@ -229,7 +229,7 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
         Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
 
 
-doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d)
+doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d, Render q, Render d)
             => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
             -> FilePath 
@@ -295,7 +295,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
-train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d)
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d)
       =>  Bool
       -> F.FeatureSpace Feat ph
       -> TrainData Feat ph q d
@@ -381,6 +381,14 @@ loadJsonLRunFiles prefix inputRuns = do
                 decodeRankingEntry bs = either fail (return . unserializeRankingEntry ) 
                                       $ Aeson.eitherDecode bs
             mapM decodeRankingEntry (BSL.lines bs)
+
+writeJsonLRunFile :: forall q d
+                  . (Aeson.ToJSON q, Aeson.ToJSON d)
+                  => FilePath -> [SimplirRun.RankingEntry' q d] -> IO()
+writeJsonLRunFile filename runEntries = do
+    let lines :: [BSL.ByteString]
+        lines = fmap (Aeson.encode . SerializedRankingEntry) $ runEntries
+    BSL.writeFile filename $ BSL.unlines $ lines
 
 
 

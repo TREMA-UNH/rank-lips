@@ -70,6 +70,12 @@ type FoldRestartResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel
 type BestFoldResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 
+class Render a where 
+    render :: a -> T.Text
+
+
+instance Render T.Text where
+    render = id
 
 
 data FeatureVariant = FeatScore | FeatRecipRank
