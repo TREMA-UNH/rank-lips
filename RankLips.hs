@@ -39,7 +39,6 @@ import qualified Data.List.Split as Split
 import System.Directory
 
 import Data.Aeson as Aeson
--- import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
@@ -54,10 +53,6 @@ import FeaturesAndSetup
 
 -- import Debug.Trace  as Debug
 
-type NumResults = Int
-
-
-type RankEntry = SimplirRun.DocumentName
 
 
 minibatchParser :: Parser MiniBatchParams
@@ -110,6 +105,7 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
+    <*> flag False True  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
@@ -206,7 +202,7 @@ opts = subparser
           <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
           <*> flag ModelVersionV11 ModelVersionV10 (long "is-v10-model" <> help "for loading V1.0 rank-lips models")
       where
-        f :: FeatureParams ->  FilePath ->  FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
+        f :: FeatureParams ->  FilePath ->   FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
         f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile modelVersion = do
             let backwardsCompatibleModelLoader =
                     case modelVersion of

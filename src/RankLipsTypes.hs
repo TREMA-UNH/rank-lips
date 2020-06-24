@@ -168,6 +168,7 @@ data SomeRankLipsModel f where
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
                                    , features :: [FilePath]
                                    , featureVariants :: [FeatureVariant]
+                                   , featuresFromJsonL :: Bool
                                    }
     deriving (Eq, Show)
 
@@ -198,8 +199,8 @@ instance Show Feat where
 --     readPrec = fmap Feat readPrec
 
 
-data FeatureSet = FeatureSet { featureNames :: S.Set Feat
-                             , produceFeatures :: FilePath -> SimplirRun.RankingEntry -> [(Feat, Double)]
+data FeatureSet q d = FeatureSet { featureNames :: S.Set Feat
+                             , produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
                              }
 
 
