@@ -19,8 +19,10 @@ library
                        , TrainAndSave
                        , FeaturesAndSetup
                        , RankLipsCompat
-                      --  , EntFeatures
-                       
+                       , EntFeatures
+                       , JsonRunQrels
+                       , QrelInfo
+                       , RankLipsFeatureUtils
   hs-source-dirs:      src
   ghc-options:         -Wall
   build-depends:       base,
@@ -95,50 +97,51 @@ executable rank-lips
   default-language:    Haskell2010
 
 
--- executable ent-rank-lips
---   main-is:             EntRankLips.hs
---   -- other-modules:
---   -- other-extensions:
---   build-depends:       base >=4.12 && <4.14
---   ghc-options:         -Wall -rtsopts -threaded
---   build-depends:       base,
---                        async,
---                        bytestring,
---                        unordered-containers,
---                        text,
---                        vector,
---                        indexed-vector,
---                        containers,
---                        stm,
---                        random,
---                        lens,
---                        deepseq,
---                        optparse-applicative >= 0.12,
---                        wl-pprint-text,
---                        hashable,
---                        heaps,
---                        psqueues,
---                        transformers,
---                        aeson,
---                        simplir,
---                        simplir-io,
---                        simplir-disk-index,
---                        pipes,
---                        parallel,
---                        serialise,
---                        pipes-safe,
---                        pipes,
---                        foldl,
---                        dlist,
---                        serialise,
---                        filepath,
---                        log-domain,
---                        time,
---                        split,
---                        directory,
---                        gitrev >= 1.3,
---                        graph-algorithms,
---                        simplir-word-embedding,
---                        simplir-learning-to-rank,
---                        rank-lips
---   default-language:    Haskell2010
+executable ent-rank-lips
+  main-is:             EntRankLips.hs
+  -- other-modules:
+  -- other-extensions:
+  build-depends:       base >=4.12 && <4.14
+  ghc-options:         -Wall -rtsopts -threaded
+  build-depends:       base,
+                       async,
+                       bytestring,
+                       unordered-containers,
+                       text,
+                       vector,
+                       indexed-vector,
+                       containers,
+                       stm,
+                       random,
+                       lens,
+                       deepseq,
+                       optparse-applicative >= 0.12,
+                       wl-pprint-text,
+                       hashable,
+                       heaps,
+                       psqueues,
+                       transformers,
+                       aeson,
+                       simplir,
+                       simplir-io,
+                       simplir-disk-index,
+                       pipes,
+                       parallel,
+                       serialise,
+                       pipes-safe,
+                       pipes,
+                       foldl,
+                       dlist,
+                       serialise,
+                       filepath,
+                       log-domain,
+                       time,
+                       split,
+                       directory,
+                       gitrev >= 1.3,
+                       scientific >= 0.3,
+                       graph-algorithms,
+                       simplir-word-embedding,
+                       simplir-learning-to-rank,
+                       rank-lips
+  default-language:    Haskell2010
