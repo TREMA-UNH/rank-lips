@@ -27,7 +27,7 @@ static-dist:
     paths:
       - .cabal-store
   artifacts:
-    expire_in: 8 weeks
+    expire_in: 3 days
     paths:
       - result
 
@@ -37,6 +37,10 @@ static-rank-lips:
     - static-dist
   script:
     - rm -Rf result; cp -Lr out/rank-lips result
+  artifacts:
+    expire_in: 3 days
+    paths:
+      - result
 
 static-ent-rank-lips:
   stage: test
@@ -44,6 +48,10 @@ static-ent-rank-lips:
     - static-dist
   script:
     - rm -Rf result; cp -Lr out/ent-rank-lips result
+  artifacts:
+    expire_in: 3 days
+    paths:
+      - result
 
 cmd-parameter-test:
   stage: test
