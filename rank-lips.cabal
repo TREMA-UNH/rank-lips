@@ -23,6 +23,7 @@ library
                        , JsonRunQrels
                        , QrelInfo
                        , RankLipsFeatureUtils
+                       , RankDataType
   hs-source-dirs:      src
   ghc-options:         -Wall
   build-depends:       base,
@@ -42,7 +43,10 @@ library
                        serialise,
                        filepath,
                        split,
+                       vector,
+                       indexed-vector,
                        aeson >= 1.4,
+                       scientific >= 0.3,
                        simplir,
                        simplir-io,
                        simplir-learning-to-rank

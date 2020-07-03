@@ -156,16 +156,20 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
 
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    
-    QrelInfo{..} <- fromMaybe noQrelInfo 
-                     <$> mapM (loadQrelInfo convQ convD) qrelFileOpt
+
+    QrelInfo{..} <- case qrelFileOpt of
+                        Just qrelFile -> do
+                            loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
+                                        -- :: IO [QRel.Entry q d QRel.IsRelevant]
+                            --  qrelData'
+                        Nothing -> return $ noQrelInfo
 
 
     let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList = fmap M.toList featureDataMap
 
-        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
-        allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList
+        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
+        allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
 
         ranking = withStrategy (parTraversable rseq) 
                 $ rerankRankings' model allDataList    
@@ -203,7 +207,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
                     else loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    QrelInfo{..} <- loadQrelInfo convQ convD qrelFile
+    QrelInfo{..} <- loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
 
     let defaultFeatureVec =  createDefaultFeatureVec fspace defaultFeatureParamsOpt
 
@@ -233,7 +237,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
                 else (featureDataList, createModelEnvelope id)
 
         allDataListRaw :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
-        allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
+        allDataListRaw = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList'
 
         allDataList = allDataListRaw
 
