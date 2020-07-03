@@ -7,7 +7,7 @@ variables:
   THREADS: 9
   GIT_SUBMODULE_STRATEGY: recursive
 
-static-dist:
+rank-lips-static:
   stage: build
   before_script:
     - ghc --version
@@ -21,19 +21,21 @@ static-dist:
         -fstatic --ghc-options='-optl=-static' \
         --installdir=out --overwrite-policy=always \
         exe:rank-lips
-    - rm -Rf result; cp -Lr out/ result
+    - ls -lhL out/    
+    - rm -Rf result; mkdir -p result; cp -L out/rank-lips result/
   cache:
     paths:
       - .cabal-store
   artifacts:
-    expire_in: 8 weeks
+    expire_in: 3 days
     paths:
       - result
+
 
 cmd-parameter-test:
   stage: test
   dependencies:
-    - static-dist
+    - rank-lips-static
   script:
     - sudo apk add jq
     - |
@@ -45,7 +47,7 @@ cmd-parameter-test:
 backwards-compatibility-V10-test:
   stage: test
   dependencies:
-    - static-dist
+    - rank-lips-static
   script:
     - |
       export bin=$(pwd)/result
@@ -56,7 +58,7 @@ backwards-compatibility-V10-test:
 jsonl-cmd-parameter-test:
   stage: test
   dependencies:
-    - static-dist
+    - rank-lips-static
   script:
     - sudo apk add jq
     - |
@@ -64,3 +66,31 @@ jsonl-cmd-parameter-test:
       cd rank-lips-jsonl-example
       ./run-jsonl.sh
       rm -R out
+
+
+
+
+
+ent-rank-lips-static:
+  stage: build
+  before_script:
+    - ghc --version
+  script:
+    - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
+    - cabal update
+    - |
+      cabal --store-dir=$(pwd)/.cabal-store \
+        v2-install \
+        --disable-shared --enable-static --enable-executable-static \
+        -fstatic --ghc-options='-optl=-static' \
+        --installdir=out --overwrite-policy=always \
+        exe:rank-lips
+    - ls -lhL out/    
+    - rm -Rf result; cp -Lr out/ent-rank-lips result
+  cache:
+    paths:
+      - .cabal-store
+  artifacts:
+    expire_in: 3 days
+    paths:
+      - result      

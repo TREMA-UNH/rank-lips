@@ -52,38 +52,41 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL
 
+import JsonRunQrels
+import QrelInfo
+import RankLipsFeatureUtils
 
-convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
-convertFeatureNames featureVariants features = 
-    S.fromList $ [ augmentFname ft run 
-                | run <-  features
-                , ft <- featureVariants
-                ]
-
-
-augmentFname :: FeatureVariant -> FilePath -> Feat
-augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
-
+-- convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
+-- convertFeatureNames featureVariants features = 
+--     S.fromList $ [ augmentFname ft run 
+--                 | run <-  features
+--                 , ft <- featureVariants
+--                 ]
 
 
-featureSet :: FeatureParams -> FeatureSet q d
-featureSet FeatureParams{..} =
-    let
-        featureNames :: S.Set Feat
-        featureNames = convertFeatureNames featureVariants features 
+-- augmentFname :: FeatureVariant -> FilePath -> Feat
+-- augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
 
-        produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
-        produceFeatures fname SimplirRun.RankingEntry{..} =
-            [ produceFeature ft
-            | ft <- featureVariants
-            ]
-          where produceFeature :: FeatureVariant -> (Feat, Double)
-                produceFeature FeatScore = 
-                    ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
-                produceFeature FeatRecipRank = 
-                    ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
 
-    in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
+
+-- featureSet :: FeatureParams -> FeatureSet q d
+-- featureSet FeatureParams{..} =
+--     let
+--         featureNames :: S.Set Feat
+--         featureNames = convertFeatureNames featureVariants features 
+
+--         produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
+--         produceFeatures fname SimplirRun.RankingEntry{..} =
+--             [ produceFeature ft
+--             | ft <- featureVariants
+--             ]
+--           where produceFeature :: FeatureVariant -> (Feat, Double)
+--                 produceFeature FeatScore = 
+--                     ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
+--                 produceFeature FeatRecipRank = 
+--                     ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
+
+--     in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
 
 
 
@@ -112,84 +115,24 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagP
 
 
 
+-- createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
+-- createDefaultFeatureVec fspace defaultFeatureParamsOpt =
+--         F.fromList fspace 
+--         $ case  defaultFeatureParamsOpt of
+--             Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
+--             Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
+--                                                         | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
+--                                                         , (fv', val) <- fvVals
+--                                                         , fv' == fv
+--                                                         ]
+--             Just (DefaultFeatureValue fVals) -> [ (f, val )
+--                                                         | f@Feat{featureName = fname} <- F.featureNames fspace
+--                                                         , (fname', val) <- fVals
+--                                                         , fname' == fname
+--                                                         ]
+--             Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
 
-data QrelInfo q d = QrelInfo { qrelData :: [QRel.Entry q d IsRelevant]
-                         , qrelMap :: M.Map q (M.Map d IsRelevant)
-                         , lookupQrel :: IsRelevant -> q -> d -> IsRelevant
-                         , totalRels :: M.Map q Int
-                         , metric :: ScoringMetric IsRelevant q
-                         , metricName :: T.Text
-                         }
-noQrelInfo :: (Ord q) => QrelInfo q d                        
-noQrelInfo = QrelInfo { qrelData = []
-                      , qrelMap = mempty
-                      , lookupQrel = (\rel _q _d -> rel)
-                      , totalRels = mempty
-                      , metric = const 0.0
-                      , metricName = "-"
-                      }
-
-
-loadQrelInfo :: forall q d . (Ord q, Ord d, Show q, Show d)
-             =>  (SimplirRun.QueryId -> q) 
-             -> (SimplirRun.DocumentName -> d) 
-             -> FilePath 
-             -> IO (QrelInfo q d)
-loadQrelInfo convQ convD qrelFile = do
-    qrelData <- QRel.readQRel qrelFile
-                :: IO [QRel.Entry SimplirRun.QueryId SimplirRun.DocumentName IsRelevant]
-
-
-    let qrelData' :: [QRel.Entry q d IsRelevant]
-        qrelData' = [ QRel.Entry {queryId = (convQ queryId), documentName = (convD documentName), relevance = relevance} | QRel.Entry {..}  <- qrelData]
-        qrelMap :: M.Map q (M.Map d IsRelevant)
-        qrelMap = M.fromListWith (<>)
-                [ (queryId, M.singleton (documentName) relevance)
-                | QRel.Entry {..}  <- qrelData'
-                ]
-
-        lookupQrel :: IsRelevant -> q -> d -> IsRelevant
-        lookupQrel defaultRel queryId docName =
-            case queryId `M.lookup` qrelMap of
-                Nothing -> defaultRel
-                Just dMap -> case  docName `M.lookup` dMap of
-                                Nothing -> defaultRel
-                                Just r -> r
-
-        totalRels :: M.Map q Int
-        !totalRels = fmap countRel qrelMap
-                    where countRel :: M.Map x IsRelevant -> Int
-                          countRel m = length [ r
-                                                | (_, r) <- M.toList m
-                                                , QRel.isPositive r
-                                                ]
-
-        metric :: ScoringMetric IsRelevant q
-        metric = meanAvgPrec (\q -> fromMaybe 0 $ q `M.lookup` totalRels)  Relevant
-
-
-
-    return $ QrelInfo{qrelData = qrelData', qrelMap = qrelMap, lookupQrel = lookupQrel, totalRels = totalRels, metric = metric, metricName = "map"}
-
-
-createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
-createDefaultFeatureVec fspace defaultFeatureParamsOpt =
-        F.fromList fspace 
-        $ case  defaultFeatureParamsOpt of
-            Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
-            Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
-                                                        | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
-                                                        , (fv', val) <- fvVals
-                                                        , fv' == fv
-                                                        ]
-            Just (DefaultFeatureValue fVals) -> [ (f, val )
-                                                        | f@Feat{featureName = fname} <- F.featureNames fspace
-                                                        , (fname', val) <- fVals
-                                                        , fname' == fname
-                                                        ]
-            Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
-
-            x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
+--             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
 doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d, Aeson.FromJSON q, Aeson.FromJSON d)
@@ -213,16 +156,20 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
 
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    
-    QrelInfo{..} <- fromMaybe noQrelInfo 
-                     <$> mapM (loadQrelInfo convQ convD) qrelFileOpt
+
+    QrelInfo{..} <- case qrelFileOpt of
+                        Just qrelFile -> do
+                            loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
+                                        -- :: IO [QRel.Entry q d QRel.IsRelevant]
+                            --  qrelData'
+                        Nothing -> return $ noQrelInfo
 
 
     let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
         featureDataList = fmap M.toList featureDataMap
 
-        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
-        allDataList = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList
+        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
+        allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
 
         ranking = withStrategy (parTraversable rseq) 
                 $ rerankRankings' model allDataList    
@@ -260,7 +207,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
                     else loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    QrelInfo{..} <- loadQrelInfo convQ convD qrelFile
+    QrelInfo{..} <- loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
 
     let defaultFeatureVec =  createDefaultFeatureVec fspace defaultFeatureParamsOpt
 
@@ -290,7 +237,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
                 else (featureDataList, createModelEnvelope id)
 
         allDataListRaw :: M.Map q [( d, FeatureVec Feat ph Double, Rel)]
-        allDataListRaw = augmentWithQrelsList_ (lookupQrel NotRelevant) featureDataList'
+        allDataListRaw = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList'
 
         allDataList = allDataListRaw
 
@@ -348,53 +295,12 @@ loadRunFiles convQ convD prefix inputRuns = do
             SimplirRun.RankingEntry{ queryId= convQ queryId
                                     , documentName = convD documentName
                                     , .. }
-
-newtype SerializedRankingEntry q d = SerializedRankingEntry { unserializeRankingEntry :: SimplirRun.RankingEntry' q d }
-    deriving (Show, Generic)
-
-instance (Aeson.FromJSON q, Aeson.FromJSON d) 
-        => Aeson.FromJSON (SerializedRankingEntry q d) where
-    parseJSON = Aeson.withObject "SerializedRankingEntry" $ \content -> do
-        queryId <- content Aeson..: "query"
-        documentName <- content Aeson..: "document"
-        documentRank <- content Aeson..: "rank"    
-        documentScore <- content Aeson..: "score"
-        methodName <- fromMaybe "" <$> content Aeson..:? "method"      
-        return $ SerializedRankingEntry (SimplirRun.RankingEntry{..})
-
-instance (Aeson.ToJSON q, Aeson.ToJSON d) 
-        => Aeson.ToJSON (SerializedRankingEntry q d) where
-    toJSON (SerializedRankingEntry (SimplirRun.RankingEntry{..})) =
-        Aeson.object $ [ "query" Aeson..= queryId
-                       , "document" Aeson..= documentName
-                       , "rank" Aeson..= documentRank
-                       , "score" Aeson..= documentScore
-                       ] <> case methodName of
-                                "" -> []
-                                name -> ["method" Aeson..= name]
-    
 loadJsonLRunFiles :: forall q d 
                   . (Aeson.FromJSON q, Aeson.FromJSON d)
                   => FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
 loadJsonLRunFiles prefix inputRuns = do
     mapM (\fname -> (fname,)
         <$> readJsonLRunFile (prefix </> fname)) inputRuns    
-  where readJsonLRunFile :: FilePath -> IO (([SimplirRun.RankingEntry' q d]))
-        readJsonLRunFile fname = do
-            bs <- BSL.readFile fname
-            let decodeRankingEntry :: BSL.ByteString -> IO (SimplirRun.RankingEntry' q d)
-                decodeRankingEntry bs = either fail (return . unserializeRankingEntry ) 
-                                      $ Aeson.eitherDecode bs
-            mapM decodeRankingEntry (BSL.lines bs)
-
-writeJsonLRunFile :: forall q d
-                  . (Aeson.ToJSON q, Aeson.ToJSON d)
-                  => FilePath -> [SimplirRun.RankingEntry' q d] -> IO()
-writeJsonLRunFile filename runEntries = do
-    let lines :: [BSL.ByteString]
-        lines = fmap (Aeson.encode . SerializedRankingEntry) $ runEntries
-    BSL.writeFile filename $ BSL.unlines $ lines
-
 
 
 augmentWithQrelsList_ ::  forall ph q d
@@ -411,15 +317,15 @@ augmentWithQrelsList_ lookupQrel qData =
                     (doc, feats, lookupQrel query doc)
 
 
-internFeatures :: F.FeatureSpace Feat ph -> [(Feat, d)] -> [(Feat, d)]
-internFeatures fspace features =
-    fmap internF features
-  where 
-    internF (f,v) =  
-      let f' = F.internFeatureName fspace f
-      in case f' of
-            Just f'' -> (f'', v)
-            Nothing -> error $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
+-- internFeatures :: F.FeatureSpace Feat ph -> [(Feat, d)] -> [(Feat, d)]
+-- internFeatures fspace features =
+--     fmap internF features
+--   where 
+--     internF (f,v) =  
+--       let f' = F.internFeatureName fspace f
+--       in case f' of
+--             Just f'' -> (f'', v)
+--             Nothing -> error $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
 
 
 runFilesToFeatureVectorsMap :: forall ph q d . (Ord q, Ord d)
