@@ -31,6 +31,8 @@ import qualified Options.Applicative.Help.Pretty as Pretty
 import System.FilePath
 import Control.Concurrent (setNumCapabilities)
 
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import Data.List
@@ -38,22 +40,32 @@ import Data.Maybe
 import qualified Data.List.Split as Split
 import System.Directory
 
+
 import Data.Aeson as Aeson
+-- import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import qualified Data.Scientific
+import GHC.Generics (Generic)
+import Control.Parallel.Strategies (NFData)
+import qualified Data.Vector as Vector
+
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
+import qualified SimplIR.Format.QRel as QRel
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import qualified SimplIR.FeatureSpace as F
 
 
 import RankLipsTypes
-import RankLipsCompat
-import FeaturesAndSetup
+import EntFeatures
 import JsonRunQrels
-import RankLipsFeatureUtils
+import RankDataType
 
--- import Debug.Trace  as Debug
+import Debug.Trace  as Debug
+
+
+
 
 
 
@@ -107,7 +119,7 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
-    <*> flag True False  (long "jsonl-run" <> help "Load data from jsonl file instead of trec_eval run file")   
+    <*> flag False True  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 
@@ -147,7 +159,7 @@ gitMsg =  concat [ "[git ", $(gitBranch), "@", $(gitHash)
 
 
 getRankLipsVersion :: String
-getRankLipsVersion = "Rank-lips version 1.2"
+getRankLipsVersion = "ENT-Rank-lips version 1.1"
 
 data ModelVersion = ModelVersionV10 | ModelVersionV11
     deriving (Eq, Read, Show)
@@ -155,10 +167,9 @@ data ModelVersion = ModelVersionV10 | ModelVersionV11
 opts :: Parser (IO ())
 opts = subparser
     $  cmd "train"        doTrain'
-    <> cmd "predict"        doPredict'
-    <> cmd "convert-old-model"        doConvertModel'
-    <> cmd "version" doPrintVersion
-    <> cmd "convert-features" doConvertFeatures'
+    <>  cmd "conv-qrels"  doConvQrels'
+    <>  cmd "conv-runs"   doConvRuns'
+    <>  cmd "export-runs" doExportRuns'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -184,9 +195,11 @@ opts = subparser
           <*> convergenceParamParser
           <*> defaultFeatureParamsParser
           <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
+          <*> many (option ( RankDataField . T.pack <$> str) (short 'P' <> long "project" <> metavar "FIELD" <> help "json fields to project out (i.e., marginalize over)" ))
+          <*> optional (option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" ))
       where
-        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> IO()
-        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads = do
+        f :: FeatureParams ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> [RankDataField] -> Maybe RankDataField ->  IO()
+        f fparams@FeatureParams{..} outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads projectionFields trainFieldOpt = do
             setNumCapabilities numThreads
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
@@ -194,107 +207,69 @@ opts = subparser
                                 [] -> dirFeatureFiles
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
-            doTrain id id (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) getRankLipsVersion
+
+                projectFieldSet = S.fromList $ projectionFields
+
+                dProj :: RankData -> RankData
+                dProj rd =
+                    modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` projectFieldSet) m) rd
+
+
+            doEntTrain @T.Text dProj (fparams{features=features'}) outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) trainFieldOpt getRankLipsVersion
             
-
-    doPredict' =
-        f <$> featureParamsParser
-          <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
-          <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
-          <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file, if provided, test MAP scores will be reported" <> metavar "QRELS" ))
-          <*> option str (long "model" <> short 'm' <> help "file where model parameters will be read from " <> metavar "FILE" )
-          <*> flag ModelVersionV11 ModelVersionV10 (long "is-v10-model" <> help "for loading V1.0 rank-lips models")
+    doConvQrels' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new qrels file" <> metavar "FILE")     
+          <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )
+          <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" )
       where
-        f :: FeatureParams ->  FilePath ->   FilePath -> Maybe FilePath -> FilePath -> ModelVersion ->  IO()
-        f fparams@FeatureParams{..}  outputDir outputPrefix  qrelFileOpt modelFile modelVersion = do
-            let backwardsCompatibleModelLoader =
-                    case modelVersion of
-                        ModelVersionV11 -> loadRankLipsModel modelFile
-                        ModelVersionV10 -> loadRankLipsV10Model modelFile
+        f :: FilePath -> FilePath -> RankDataField ->  IO()
+        f outputFile qrelFile qrelField = do
+            -- createDirectoryIfMissing True outputFile
 
-            (SomeRankLipsModel (lipsModel :: RankLipsModel f ph)) <- deserializeRankLipsModel <$> backwardsCompatibleModelLoader
-
-            let model ::  Model Feat ph
-                model = trainedModel lipsModel
-                fspace = modelFeatures model  
-                modelFeatureFiles = F.featureNames fspace 
-
-            dirFiles <- listDirectory featureRunsDirectory
-            let dirFeatureSet = convertFeatureNames [minBound @FeatureVariant .. maxBound @FeatureVariant] dirFiles
-                modelFeatureSet :: S.Set Feat
-                modelFeatureSet = (S.fromList modelFeatureFiles)
-                missingFeatures = modelFeatureSet `S.difference` dirFeatureSet
-            when (not $ S.null $ missingFeatures)
-                $ fail $ "Missing files for features (which are defined in model file): "
-                             ++ show missingFeatures
-
-            createDirectoryIfMissing True outputDir
-
-            let revertedModelFeatureFiles = nub $ mapMaybe extractFeatFiles modelFeatureFiles
-                outputFilePrefix = outputDir </> outputPrefix
-
-            doPredict id id (fparams{features = revertedModelFeatureFiles }) outputFilePrefix (defaultFeatureParams lipsModel) model qrelFileOpt
-          where
-              extractFeatFiles :: Feat -> Maybe FilePath
-              extractFeatFiles (Feat FeatNameInputRun{..}) = Just fRunFile
-              extractFeatFiles _ = Nothing
-
-    doConvertModel' =
-        convertOldModel
-             <$> argument str (metavar "FILE" <> help "old model file")
-             <*> option str (long "output" <> short 'o' <> metavar "OUT" <> help "file where new model will be written to")
-
-    doConvertFeatures' =
-        doConvertFeatures
-             <$> option str (short 'd' <> long "input-dir" <> metavar "IN-DIR" <> help "directory of old feature files")
-             <*> many (argument str ( metavar "FILE" <> help "filenames of feature files"))
-             <*> option str (long "output" <> short 'o' <> metavar "OUT-DIR" <> help "directory where new features will be written to")
-             <*> (flag' OldRunToJsonLMode (long "old-run-features-to-jsonl")
-                 <|> flag' JsonLRunToTrecEval (long "jsonl-run-to-trec-eval")
-                 )
-             
-data ConvertFeatureMode = OldRunToJsonLMode | JsonLRunToTrecEval
-    deriving (Eq, Show)
+            qrels <- readTrecEvalQrelFile id convD qrelFile
+            writeJsonLQrelFile outputFile qrels
+          where  
+            convD :: QRel.DocumentName -> RankData
+            convD txt = singletonRankData qrelField txt
+            
+    doConvRuns' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new run file" <> metavar "FILE")     
+          <*> option str (long "run" <> short 'r' <> help "trec_eval run file " <> metavar "RUN" )
+          <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "run-field" <> metavar "FIELD" <> help "json field representing data in file" )
+      where
+        f :: FilePath -> FilePath -> RankDataField ->  IO()
+        f outputFile runFile runField = do
+            runData <- readTrecEvalRunFile id convD runFile
+            writeJsonLRunFile outputFile runData
+          where  
+            convD :: SimplirRun.DocumentName -> RankData
+            convD txt = singletonRankData runField txt
+            
+    doExportRuns' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
+          <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
+          <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "run-field" <> metavar "FIELD" <> help "json field to expose in run file" )
+      where
+        f :: FilePath -> FilePath -> RankDataField ->  IO()
+        f outputFile runFile runField = do
+            runData <- readJsonLRunFile runFile
+            writeTrecEvalRunFile outputFile runData id convD
+          where  
+            convD :: RankData -> SimplirRun.DocumentName
+            convD (RankData m) = fromMaybe (errMsg m) $ runField `M.lookup` m
+            errMsg m = error $ "Can't find field "<> show runField <>" in json object "<> show m
 
 
-convertOldModel :: FilePath -> FilePath -> IO()
-convertOldModel oldModelFile newModelFile = do
-    (SomeRankLipsModel (convertedLipsModel :: RankLipsModel f ph))  <- deserializeRankLipsModel <$> loadRankLipsV10Model oldModelFile
 
-    let serializedRankLipsModel = serializeRankLipsModel 
-                                $ convertedLipsModel {rankLipsVersion = Just $ getRankLipsVersion
-                                                                             <> ". (Converted from V1.0 model \'"
-                                                                            <> oldModelFile
-                                                                            <> "\')"
-                                                     }
-    BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
+debugTr :: (x -> String) ->  x -> x
+debugTr msg x = Debug.trace (msg x) $ x
 
-
-doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> ConvertFeatureMode-> IO()
-doConvertFeatures oldDir filenames  newDir OldRunToJsonLMode = do
-    runs <- loadRunFiles id id oldDir filenames
-    forM_ runs (\(fname, content) ->
-            writeJsonLRunFile (newDir</>fname) content
-        ) 
-doConvertFeatures oldDir filenames  newDir JsonLRunToTrecEval = do
-    runs <- loadJsonLRunFiles oldDir filenames
-    forM_ runs (\(fname, content) ->
-            SimplirRun.writeRunFile (newDir</>fname) content
-        ) 
 
 main :: IO ()
 main = join $ execParser $ info (helper <*> opts) (progDescDoc (Just desc) <> fullDesc)
   where
     desc = Pretty.vcat $ Pretty.punctuate Pretty.linebreak
-        [ para [ "Rank-lips is a high-performance multi-threaded list-wise learning-to-rank implementation that supports mini-batched learning." ]
-        , para [ "Rank-lips is designed to work with trec_eval file formats for defining runs (run format) and relevance data (qrel format)."
-               , "The features will be taken from the score and/or reciprocal rank of each input file. The filename of an input run"
-               , "(in the directory) will be used as a feature name. If you want to train a model and predict on a different test set"
-               , "make sure that the input runs for test features are using exactly the sane filename. We recommend to create"
-               , "different directories for training and test sets." ]
-        , para [ "For more information on invidiual commands call:" ]
-        , Pretty.indent 4 "rank-lips COMMAND -h"
-        , para [ " Also see website: http://www.cs.unh.edu/~dietz/rank-lips/" ]
+        [ para [ "ENT Rank-lips " ]
         ]
     para = Pretty.fillSep . map Pretty.text . foldMap words
   

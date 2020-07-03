@@ -1,0 +1,10 @@
+{"score":0.1,"method":"run","document":{"paragraph":123, "entity":"USA"},"query":"Q10","rank":2}
+{"score":0,"method":"run","document":{"paragraph":123, "entity":"Germany"},"query":"Q10","rank":3}
+{"score":0,"method":"run","document":{"paragraph":100, "entity":"Germany"},"query":"Q10","rank":4}
+{"score":5.555555555555555e-2,"method":"run","document":{"paragraph":100, "entity":"Italy"},"query":"Q11","rank":1}
+{"score":4.5454545454545456e-2,"method":"run","document":{"paragraph":100, "entity":"Sweden"},"query":"Q11","rank":2}
+{"score":0,"method":"run","document":{"paragraph":111, "entity":"Sweden"},"query":"Q11","rank":3}
+{"score":0,"method":"run","document":{"paragraph":112, "entity":"Sweden"},"query":"Q11","rank":4}
+{"score":0,"method":"run","document":{"paragraph":112, "entity":"Germany"},"query":"Q11","rank":5}
+{"score":0,"method":"run","document":{"paragraph":113, "entity":"Germany"},"query":"Q11","rank":6}
+{"score":0,"method":"run","document":{"paragraph":113, "entity":"USA"},"query":"Q11","rank":7}
