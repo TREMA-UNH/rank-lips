@@ -1,0 +1,10 @@
+{"relevance":0,"document":{"entity":"USA", "paragraph":"123"},"query":"Q1"}
+{"relevance":1,"document":{"entity":"Germany","paragraph":"100"},"query":"Q1"}
+{"relevance":0,"document":{"entity":"Italy","paragraph":"111"},"query":"Q1"}
+{"relevance":0,"document":{"entity":"Germany","paragraph":"112"},"query":"Q2"}
+{"relevance":1,"document":{"entity":"Sweden","paragraph":"112"},"query":"Q2"}
+{"relevance":0,"document":{"entity":"Italy", "paragraph":"113"},"query":"Q2"}
+{"relevance":0,"document":{"entity":"USA","paragraph":"112"},"query":"Q2"}
+{"relevance":1,"document":{"entity":"Netherlands","paragraph":"113"},"query":"Q2"}
+{"relevance":0,"document":{"entity":"Hungary","paragraph":"112"},"query":"Q2"}
+{"relevance":1,"document":{"entity":"USA","paragraph":"113"},"query":"Q3"}
