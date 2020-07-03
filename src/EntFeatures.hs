@@ -109,9 +109,6 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
 
 doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
             => (RankData -> RankData) 
--- doEntTrain :: forall q d d'. (Ord q, Ord d, Ord d', Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d, Aeson.FromJSON d', Render q
---                             , Ord d', Show d', Render d', NFData d')
---             => (d -> d') 
             -> FeatureParams
             -> FilePath 
             -> FilePath 
@@ -139,18 +136,8 @@ doEntTrain projD featureParams@FeatureParams{..} outputFilePrefix experimentName
                                 Nothing -> id
                                 Just field -> fmap (\entry@(QRel.Entry {..}) -> entry { QRel.documentName = projectRankData field documentName }) 
 
-    QrelInfo{..} <- 
-                    -- case featuresFromJsonL of
-                    --     False -> do
-                    --         qrelData' <- readTrecEvalQrelFile convQ convD qrelFile
-                    --                     :: IO [QRel.Entry q d QRel.IsRelevant]
-                    --         loadQrelInfo qrelData'
-                        -- True -> do
-                            loadQrelInfo . projectGroundTruth <$> readJsonLQrelFile qrelFile
-                                        -- :: IO [QRel.Entry q d QRel.IsRelevant]
-                             
-
-
+    QrelInfo{..} <- loadQrelInfo . projectGroundTruth <$> readJsonLQrelFile qrelFile
+                    
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
