@@ -21,7 +21,8 @@ static-dist:
         -fstatic --ghc-options='-optl=-static' \
         --installdir=out --overwrite-policy=always \
         exe:rank-lips
-    - rm -Rf result; cp -Lr out/ result
+    - ls -lhL out/    
+    - rm -Rf result; 
   cache:
     paths:
       - .cabal-store
@@ -29,6 +30,20 @@ static-dist:
     expire_in: 8 weeks
     paths:
       - result
+
+static-rank-lips:
+  stage: test
+  dependencies:
+    - static-dist
+  script:
+    - rm -Rf result; cp -Lr out/rank-lips result
+
+static-ent-rank-lips:
+  stage: test
+  dependencies:
+    - static-dist
+  script:
+    - rm -Rf result; cp -Lr out/ent-rank-lips result
 
 cmd-parameter-test:
   stage: test
