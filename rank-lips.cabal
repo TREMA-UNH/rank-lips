@@ -27,7 +27,7 @@ library
                        , NewTrainAndSave
   hs-source-dirs:      src
   ghc-options:         -Wall
-  build-depends:       base,
+  build-depends:       base >=4.12 && <5,
                        hashable,
                        optparse-applicative >= 0.12,
                        unordered-containers,
@@ -57,7 +57,6 @@ executable rank-lips
   main-is:             RankLips.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.12 && <4.14
   ghc-options:         -Wall -rtsopts -threaded
   build-depends:       base,
                        async,
@@ -106,7 +105,6 @@ executable ent-rank-lips
   main-is:             EntRankLips.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.12 && <4.14
   ghc-options:         -Wall -rtsopts -threaded
   build-depends:       base,
                        async,

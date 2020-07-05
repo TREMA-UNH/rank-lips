@@ -50,8 +50,6 @@ type DocId = SimplirRun.DocumentName
 type Rel = IsRelevant
 type TrainData f s q d = M.Map q [(d, FeatureVec f s Double, Rel)]
 
-type FoldRestartResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel)],
-                                    [(Model f s, Double)])
 type BestFoldResults f s q d = Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
 
 

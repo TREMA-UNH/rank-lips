@@ -1,5 +1,5 @@
-
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -31,6 +31,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
+import Data.Ord
 -- import Data.Maybe
 
 import Data.Function
@@ -153,26 +154,7 @@ storeRankingDataNoMetric outputFilePrefix ranking modelDesc = do
 
 
 
--- trainAndStore :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
---         => Bool
---         -> MiniBatchParams
---         -> ConvergenceDiagParams
---         -> StdGen
---         -> TrainData f s q d
---         -> FeatureSpace f s
---         -> ScoringMetric IsRelevant q
---         -> FilePath
---         -> FilePath
---         -> (Maybe Integer -> Maybe [q] -> Model f s -> RankLipsModelSerialized f)
---         -> IO ()
--- trainAndStore includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
---           putStrLn "made folds"
---           putStrLn $ unwords [ show $ length f | f <- getFolds folds ]
-
--- TODO: plug IO bits from trainMe and move to trainAndStore
-
-
-trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
+trainAndStore :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
         => Bool
         -> MiniBatchParams
         -> ConvergenceDiagParams
@@ -184,46 +166,71 @@ trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q,
         -> FilePath
         -> (Maybe Integer -> Maybe [q] -> Model f s -> RankLipsModelSerialized f)
         -> IO ()
-        -- -> _
-trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
-          -- train me!
-          let nRestarts = convergenceRestarts convDiagParams
-              nFolds = convergenceFolds convDiagParams
+trainAndStore includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
+    putStrLn "made folds"
+    let (_, foldRestartResults) = trainMe miniBatchParams convDiagParams gen0 trainData fspace metric
 
+    let bestPerFold' :: _
+        bestPerFold' = fmap (maximumBy (comparing trainMap)) foldRestartResults
 
-          -- folded CV
-                                -- todo load external folds
-              !folds = force $ mkSequentialFolds nFolds (M.keys trainData)
-          putStrLn "made folds"
-          putStrLn $ unwords [ show $ length f | f <- getFolds folds ]
+        testRanking :: TrainedResult f s q d
+        testRanking = computeTestRanking bestPerFold'
 
-          let trainFun :: FoldIdx -> TrainData f s q d -> [(Model f s, Double)]
-              trainFun foldIdx =
-                  trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric infoStr fspace
-                where
-                  infoStr = show foldIdx
+    return ()
 
-              foldRestartResults :: Folds (M.Map  q [(d, FeatureVec f s Double, Rel)], [(Model f s, Double)])
-              foldRestartResults = trainKFolds trainFun trainData folds
+computeTestRanking :: forall f s q d. Folds (TrainedResult f s q d) -> TrainedResult f s q d
+computeTestRanking foldResults =
+    TrainedResult { model = Nothing
+                  , ranking = testRanking
+                  , testData = M.empty
+                  , modelDesc = "test"
+                  , foldNo = Nothing
+                  , restartNo = Nothing
+                  , crossValidated = Just True
+                  , trainMap = Nothing
+                  , testMap = Just testScore
+                  , metric = metric'
+                  }
+  where
+    testRanking :: _
+    testRanking = Foldable.foldMap (\TrainedResult {testData = testData, model = Just model} -> rerankRankings' model testData) foldResults
 
-              strat :: Strategy (Folds (a, [(Model f s, Double)]))
-              strat = parTraversable (evalTuple2 r0 (parTraversable rdeepseq))
-          
-          putStrLn "full Train"
-          -- full train
-          let fullRestarts = withStrategy (parTraversable rdeepseq)
-                             $ trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric "full" fspace trainData
-              (model, trainScore) =  bestModel $  fullRestarts
-              fullActions = fmap (storeModelAndRanking outputFilePrefix experimentName modelEnvelope ) $ dumpFullModelsAndRankings trainData (model, trainScore) metric
+    metric' :: ScoringMetric IsRelevant q
+    metric' = metric $ head $ toList foldResults
+    testScore = metric' testRanking
 
+trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
+        => MiniBatchParams
+        -> ConvergenceDiagParams
+        -> StdGen
+        -> TrainData f s q d
+        -> FeatureSpace f s
+        -> ScoringMetric IsRelevant q
+        -> (Restarts _, Folds (Restarts _))
+trainMe miniBatchParams convDiagParams gen0 trainData fspace metric =
+  -- train me!
+  let nRestarts = convergenceRestarts convDiagParams
+      nFolds = convergenceFolds convDiagParams
 
-          putStrLn "CV Train"
-          if includeCv
-            then do
-              foldRestartResults' <- withStrategyIO strat foldRestartResults
-              let cvActions = fmap (storeModelAndRanking outputFilePrefix experimentName modelEnvelope) $  dumpKFoldModelsAndRankings foldRestartResults' metric 
-              putStrLn "concurrently: CV Train"
-              mapConcurrentlyL_ 24 id $ fullActions ++ cvActions
-            else
-              mapConcurrentlyL_ 24 id $ fullActions
-          putStrLn "dumped all models and rankings"
+      -- folded CV
+      -- todo load external folds
+      !folds = force $ mkSequentialFolds nFolds (M.keys trainData)
+      trainFun :: FoldIdx -> TrainData f s q d -> [(Model f s, Double)]
+      trainFun foldIdx =
+          trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric infoStr fspace
+        where
+          infoStr = show foldIdx
+
+      foldRestartResults :: Folds (M.Map  q [(d, FeatureVec f s Double, Rel)], [(Model f s, Double)])
+      foldRestartResults = trainKFolds trainFun trainData folds
+  
+      -- full train
+      fullRestarts = trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric "full" fspace trainData
+      bestFull = maximumBy (comparing trainMap) fullRestarts
+
+      fullActions :: Restarts (TrainedResult f s q d)
+      fullActions = dumpFullModelsAndRankings trainData (model bestFull, trainMap bestFull) metric
+
+      folds' :: Folds (Restarts (TrainedResult f s q d))
+      folds' = dumpKFoldModelsAndRankings foldRestartResults metric 
+  in (fullActions, folds')

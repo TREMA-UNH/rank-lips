@@ -17,6 +17,8 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE MonadComprehensions #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 
@@ -159,14 +161,6 @@ discardUntrainable evalData =
             hasNeg = any (\(_,_,r) -> r /= Relevant) list
         in hasPos && hasNeg
 
-
-bestPerFold :: FoldRestartResults f s q d -> BestFoldResults f s q d
-bestPerFold = fmap (second bestModel)
-
-bestModel ::  [(Model f s, Double)] -> (Model f s, Double)
-bestModel = maximumBy (compare `on` snd)
-
-
 bestRankingPerFold :: forall f s q d. ()
                    => BestFoldResults f s q d
                    -> Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
@@ -175,90 +169,48 @@ bestRankingPerFold bestPerFold' =
 
 
 
-data TrainedResult f s q d  = TrainedResult { model :: Maybe (Model f s)
-                                   , ranking :: M.Map q (Ranking Score (d, Rel))
-                                   , testData :: M.Map q [(d, FeatureVec f s Double, Rel)]
-                                   , modelDesc :: String
-                                   , foldNo :: Maybe Integer
-                                   , restart :: Maybe Integer
-                                   , crossValidated :: Maybe Bool
-                                   , trainMap :: Maybe Double
-                                   , testMap :: Maybe Double
-                                   , metric :: ScoringMetric IsRelevant q
-                                   }
-
-
-
-
+data TrainedResult f s q d
+    = TrainedResult
+        { model :: Maybe (Model f s)
+        , ranking :: M.Map q (Ranking Score (d, Rel))
+        , testData :: M.Map q [(d, FeatureVec f s Double, Rel)]
+        , modelDesc :: String
+        , foldNo :: Maybe Integer
+        , restartNo :: Maybe Integer
+        , crossValidated :: Maybe Bool
+        , trainMap :: Maybe Double
+        , testMap :: Maybe Double
+        , metric :: ScoringMetric IsRelevant q
+        }
 
 dumpKFoldModelsAndRankings
     :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
-    => FoldRestartResults f s q d
+    => Folds ( M.Map q [(d, FeatureVec f s Double, Rel)]
+             , Restarts (Model f s, Double)
+             )
+       -- ^ test data and model restarts for each fold
     -> ScoringMetric IsRelevant q
-    -> [TrainedResult f s q d]
+    -> Folds (Restarts (TrainedResult f s q d))
 dumpKFoldModelsAndRankings foldRestartResults metric =
-    let bestPerFold' :: Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
-        bestPerFold' = bestPerFold foldRestartResults
-
-        bestRankingPerFold' :: Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
-        bestRankingPerFold' = bestRankingPerFold bestPerFold'
-
-        testRanking ::   M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel))
-        testRanking = Foldable.fold bestRankingPerFold'
-
-        testScore = metric testRanking
-
-        dumpAll = [ TrainedResult { model = Just model
-                                  , ranking = ranking
-                                  , testData = testData
-                                  , modelDesc = modelDesc
-                                  , foldNo = Just foldNo
-                                  , restart = Just restartNo
-                                  , crossValidated = Just False
-                                  , trainMap = Just trainScore
-                                  , testMap = Nothing
-                                  , metric = metric
-                                  }
-                  | (foldNo, ~(testData, restartModels))  <- zip [0..] $ toList foldRestartResults
-                  , (restartNo, ~(model, trainScore)) <- zip [0..] restartModels
-                  , let ranking = rerankRankings' model testData
-                  , let modelDesc = "fold-"<> show foldNo <> "-restart-"<> show restartNo
-                  ]
-
-
-        dumpBest =
-            [ TrainedResult { model = Just model
-                            , ranking =  ranking
-                            , testData = testData
-                            , modelDesc =  modelDesc
-                            , foldNo = Just foldNo
-                            , restart = Nothing
-                            , crossValidated = Just False
-                            , trainMap = Just $ trainScore
-                            , testMap = Nothing
-                            , metric = metric
-                            }
-            | (foldNo, (testData,  ~(model, trainScore)))  <- zip [0 :: Integer ..]
-                                                              $ toList bestPerFold'
-            , let ranking = rerankRankings' model testData
-            , let modelDesc = "fold-"<> show foldNo <> "-best"
-            ]
-
-
-        dumpCv = [ TrainedResult { model = Nothing 
-                                 , ranking = testRanking
-                                 , testData = M.empty
-                                 , modelDesc = "test"
-                                 , foldNo = Nothing
-                                 , restart = Nothing
-                                 , crossValidated = Just True
-                                 , testMap = Just $ testScore
-                                 , trainMap = Nothing
-                                 , metric = metric
-                                 }]
-
-
-    in dumpAll ++ dumpBest ++  dumpCv 
+    Folds
+    [ Restarts
+      [ TrainedResult { model = Just model
+                      , ranking = ranking
+                      , testData = testData
+                      , modelDesc = modelDesc
+                      , foldNo = Just $ fromIntegral foldNo
+                      , restartNo = Just $ fromIntegral restartNo
+                      , crossValidated = Just False
+                      , trainMap = Just trainScore
+                      , testMap = Nothing
+                      , metric = metric
+                      }
+        | (RestartIdx restartNo, ~(model, trainScore)) <- toList $ indexedRestarts restartModels
+        , let ranking = rerankRankings' model testData
+        , let modelDesc = "fold-"<> show foldNo <> "-restart-"<> show restartNo
+        ]
+    | (FoldIdx foldNo, ~(testData, restartModels)) <- toList $ indexedFolds foldRestartResults
+    ]
 
 
 
@@ -276,7 +228,7 @@ dumpFullModelsAndRankings trainData (model, trainScore) metric  =
                     , testData = M.empty
                     , modelDesc = modelDesc
                     , foldNo = Nothing
-                    , restart = Nothing
+                    , restartNo = Nothing
                     , crossValidated = Just False
                     , testMap = Nothing
                     , trainMap = Nothing
