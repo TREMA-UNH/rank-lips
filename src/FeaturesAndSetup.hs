@@ -45,6 +45,7 @@ import SimplIR.FeatureSpace.Normalise
 import qualified SimplIR.Format.QRel as QRel
 
 import TrainAndSave
+import NewTrainAndSave
 import RankLipsTypes
 import Data.Bifunctor (Bifunctor(second))
 import GHC.Generics (Generic)
@@ -144,39 +145,40 @@ doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d,
             -> Maybe FilePath 
             -> IO () 
 doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
+    putStrLn "doPredict is commented out"
 
-    let fspace = modelFeatures model
-        defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
-        FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
-           = featureSet featureParams
+    -- let fspace = modelFeatures model
+    --     defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
+    --     FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
+    --        = featureSet featureParams
 
-    runFiles <- if featuresFromJsonL
-                    then loadRunFiles convQ convD featureRunsDirectory features
-                    else loadJsonLRunFiles featureRunsDirectory features
+    -- runFiles <- if featuresFromJsonL
+    --                 then loadRunFiles convQ convD featureRunsDirectory features
+    --                 else loadJsonLRunFiles featureRunsDirectory features
 
-    putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
-
-
-    QrelInfo{..} <- case qrelFileOpt of
-                        Just qrelFile -> do
-                            loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
-                                        -- :: IO [QRel.Entry q d QRel.IsRelevant]
-                            --  qrelData'
-                        Nothing -> return $ noQrelInfo
+    -- putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
 
-    let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
-        featureDataList = fmap M.toList featureDataMap
+    -- QrelInfo{..} <- case qrelFileOpt of
+    --                     Just qrelFile -> do
+    --                         loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
+    --                                     -- :: IO [QRel.Entry q d QRel.IsRelevant]
+    --                         --  qrelData'
+    --                     Nothing -> return $ noQrelInfo
 
-        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
-        allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
 
-        ranking = withStrategy (parTraversable rseq) 
-                $ rerankRankings' model allDataList    
+    -- let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
+    --     featureDataList = fmap M.toList featureDataMap
 
-    case qrelFileOpt of
-        Just _ -> storeRankingData outputFilePrefix ranking metric "predict"
-        Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
+    --     allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
+    --     allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
+
+    --     ranking = withStrategy (parTraversable rseq) 
+    --             $ rerankRankings' model allDataList    
+
+    -- case qrelFileOpt of
+    --     Just _ -> storeRankingData outputFilePrefix ranking metric "predict"
+    --     Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
 
 
 doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d, Render q, Render d)
