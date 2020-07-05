@@ -58,25 +58,58 @@ import RankLipsFeatureUtils
 import JsonRunQrels
 import RankDataType
 
+scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
+scale x feats = 
+    [ (f, x * v) | (f, v) <- feats]
 
 runFilesToEntFeatureVectorsMap :: forall ph q d . (Ord q, Ord d)
                           =>  F.FeatureSpace Feat ph 
                           -> F.FeatureVec Feat ph Double
+                          -> (q -> d -> [d])
                           -> (FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)])
                           -> [(FilePath, [SimplirRun.RankingEntry' q d])] 
                           -> M.Map q (M.Map d (F.FeatureVec Feat ph Double))
-runFilesToEntFeatureVectorsMap fspace defaultFeatureVec produceFeatures runData = 
+runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFeatures runData = 
     let features:: M.Map q (M.Map d [(Feat, Double)]) 
         features = M.fromListWith (M.unionWith (<>))
-                 $ [ ( queryId, 
+          $ projectFeatures
+          $ producePlainFeatures runData
+
+           
+          where 
+                -- | project out fields in features using associations
+                projectFeatures ::  [(q, M.Map d [(Feat,Double)])] -> [(q, M.Map d [(Feat,Double)])]
+                projectFeatures plainFeats = 
+                   [ ( queryId, 
                         M.fromListWith (<>)
-                        [( documentName 
-                         , internFeatures fspace $ produceFeatures fname entry
+                        [( documentName' 
+                         , scale normalizationFactor featList
                         )]
                       )
-                    | (fname, rankingEntries) <- runData
-                    , entry@SimplirRun.RankingEntry {..} <- rankingEntries
+                    | (queryId, featMap) <- plainFeats
+                    , (documentName, featList) <- M.toList featMap 
+                    , let assocDocumentNames = resolveAssocs queryId documentName   -- normalization by participating objects
+                    , let normalizationFactor = 1.0 / (realToFrac $ Data.List.length assocDocumentNames)
+                    , documentName' <- assocDocumentNames
                     ]
+
+
+                -- | convert run files into list of features (keyed on q and d)
+                producePlainFeatures :: [(FilePath, [SimplirRun.RankingEntry' q d])]  -> [(q, M.Map d [(Feat,Double)])]
+                producePlainFeatures runData = 
+                           [ ( queryId, 
+                                M.fromListWith (<>)
+                                [( documentName 
+                                , (internFeatures fspace 
+                                  $ produceFeatures fname entry
+                                  )
+                                 )] :: M.Map d [(Feat, Double)]
+                            )
+                            | (fname:: FilePath, rankingEntries:: [SimplirRun.RankingEntry' q d]) <- runData
+                            , (entry@(SimplirRun.RankingEntry {..}) :: SimplirRun.RankingEntry' q d) <- rankingEntries
+                            ]
+
+
 
         featureVectors :: M.Map q (M.Map d (F.FeatureVec Feat ph Double))
         featureVectors =  fmap featureVectorize features           
@@ -107,9 +140,22 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
+resolveAssociations :: Eq q => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations assocs query doc =
+    [ documentName
+        | SimplirRun.RankingEntry {..}<- assocs
+        , queryId == query
+        , partialMatch doc documentName
+        ]
+  where partialMatch :: RankData -> RankData -> Bool
+        partialMatch (RankData part) (RankData whole) =
+            part `M.isSubmapOf` whole
+
+
 doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
             => (RankData -> RankData) 
             -> FeatureParams
+            -> FilePath
             -> FilePath 
             -> FilePath 
             -> FilePath 
@@ -122,7 +168,7 @@ doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
             -> Maybe RankDataField
             -> String
             -> IO ()
-doEntTrain projD featureParams@FeatureParams{..} outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt trainFieldOpt rankLipsVersion  = do
+doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt trainFieldOpt rankLipsVersion  = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -131,6 +177,9 @@ doEntTrain projD featureParams@FeatureParams{..} outputFilePrefix experimentName
 
     runFiles <- loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
+
+    assocs <- readJsonLRunFile assocsFile
+
 
     let projectGroundTruth = case trainFieldOpt of
                                 Nothing -> id
@@ -142,7 +191,7 @@ doEntTrain projD featureParams@FeatureParams{..} outputFilePrefix experimentName
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
+        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations assocs) produceFeatures runFiles
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 

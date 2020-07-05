@@ -26,8 +26,6 @@ module RankDataType where
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import Data.List
-import Data.Maybe
 import Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Control.Parallel.Strategies (NFData)
@@ -39,17 +37,6 @@ import GHC.Generics (Generic)
 
 
 import RankLipsTypes
-
-
--- import qualified SimplIR.Format.TrecRunFile as SimplirRun
--- import qualified SimplIR.Format.QRel as QRel
--- import SimplIR.LearningToRank
--- import SimplIR.LearningToRankWrapper
--- import qualified SimplIR.FeatureSpace as F
-
-
-
--- import Debug.Trace  as Debug
 
 newtype RankDataField = RankDataField { unDataField :: T.Text }
     deriving stock (Eq, Ord, Show, Generic)
@@ -67,7 +54,6 @@ instance FromJSON RankData where
     parseJSON (Aeson.Number n) = 
         return $  singletonRankData (RankDataField "id") (T.pack $ renderScientific n)
       where renderScientific n = 
-                -- debugTr (\x -> "renderScientific "<> x <> " from "<> show n ) $
                 Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
  
     parseJSON (Aeson.Bool b) = 
@@ -86,7 +72,6 @@ instance FromJSON RankData where
       parseJSONValue (Aeson.Number n) = 
         (T.pack $ renderScientific n)
        where renderScientific n = 
-                -- debugTr (\x -> "renderScientific "<> x <> " from "<> show n ) $
                 Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
 
       parseJSONValue (Aeson.Bool b) = 
@@ -101,11 +86,6 @@ instance FromJSON RankData where
       parseJSONValue x = error $ "Can't parse nested RankData values from "<> show x
 
     parseJSON x = fail $ "Can't parse RankData from "<> show x
-
-    
-        
-
-
 
 instance Render RankData where
     render rd@(RankData m) = 
