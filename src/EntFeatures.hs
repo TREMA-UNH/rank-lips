@@ -74,7 +74,11 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
         features = M.fromListWith (M.unionWith (<>))
           $ projectFeatures
           $ producePlainFeatures runData
-          where projectFeatures ::  [(q, M.Map d [(Feat,Double)])] -> [(q, M.Map d [(Feat,Double)])]
+
+           
+          where 
+                -- | project out fields in features using associations
+                projectFeatures ::  [(q, M.Map d [(Feat,Double)])] -> [(q, M.Map d [(Feat,Double)])]
                 projectFeatures plainFeats = 
                    [ ( queryId, 
                         M.fromListWith (<>)
@@ -90,7 +94,7 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                     ]
 
 
-
+                -- | convert run files into list of features (keyed on q and d)
                 producePlainFeatures :: [(FilePath, [SimplirRun.RankingEntry' q d])]  -> [(q, M.Map d [(Feat,Double)])]
                 producePlainFeatures runData = 
                            [ ( queryId, 
@@ -136,8 +140,8 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-resolveAssocs :: Eq q => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
-resolveAssocs assocs query doc =
+resolveAssociations :: Eq q => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations assocs query doc =
     [ documentName
         | SimplirRun.RankingEntry {..}<- assocs
         , queryId == query
@@ -187,7 +191,7 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssocs assocs) produceFeatures runFiles
+        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations assocs) produceFeatures runFiles
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 

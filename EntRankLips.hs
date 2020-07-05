@@ -31,30 +31,16 @@ import qualified Options.Applicative.Help.Pretty as Pretty
 import System.FilePath
 import Control.Concurrent (setNumCapabilities)
 
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import Data.List
 import Data.Maybe
 import qualified Data.List.Split as Split
 import System.Directory
 
-
-import Data.Aeson as Aeson
--- import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BSL
-import qualified Data.Scientific
-import GHC.Generics (Generic)
-import Control.Parallel.Strategies (NFData)
-import qualified Data.Vector as Vector
-
-
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import qualified SimplIR.Format.QRel as QRel
 import SimplIR.LearningToRank
-import SimplIR.LearningToRankWrapper
-import qualified SimplIR.FeatureSpace as F
 
 
 import RankLipsTypes

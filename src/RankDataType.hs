@@ -26,8 +26,6 @@ module RankDataType where
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import Data.List
-import Data.Maybe
 import Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Control.Parallel.Strategies (NFData)
