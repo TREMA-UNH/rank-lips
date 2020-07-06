@@ -279,7 +279,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainMe includeCv miniBatchParams convergenceDiagParams
+    trainAndStore includeCv miniBatchParams convergenceDiagParams
             gen0 allData fspace metric outputFilePrefix "" modelEnvelope
 
 

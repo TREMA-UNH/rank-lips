@@ -132,7 +132,8 @@ trainWithRestarts
     -> String
     -> FeatureSpace f s
     -> TrainData f s q d
-    -> [(Model f s, Double)]
+    -- -> [(Model f s, Double)]
+    -> Restarts (Model f s, Double)
        -- ^ an infinite list of restarts
 trainWithRestarts nRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
   let trainData' = discardUntrainable trainData
@@ -149,7 +150,7 @@ trainWithRestarts nRestarts miniBatchParams (ConvergenceDiagParams convThreshold
           info' = info <> " restart " <> show restart
       modelsWithTrainScore :: [(Model f s,Double)]
       modelsWithTrainScore = zipWith restartModel [0..] rngSeeds
-     in take nRestarts modelsWithTrainScore
+     in Restarts $ take nRestarts modelsWithTrainScore
 
 
 discardUntrainable :: TrainData f s q d -> TrainData f s q d
@@ -200,7 +201,7 @@ dumpKFoldModelsAndRankings foldRestartResults metric =
                       , modelDesc = modelDesc
                       , foldNo = Just $ fromIntegral foldNo
                       , restartNo = Just $ fromIntegral restartNo
-                      , crossValidated = Just False
+                      , crossValidated = Nothing
                       , trainMap = Just trainScore
                       , testMap = Nothing
                       , metric = metric
@@ -214,27 +215,57 @@ dumpKFoldModelsAndRankings foldRestartResults metric =
 
 
 
+
 dumpFullModelsAndRankings
-    :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
-    => M.Map q [(d, FeatureVec f ph Double, Rel)]
-    -> (Model f ph, Double)
+    :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
+    =>  M.Map q [(d, FeatureVec f s Double, Rel)]
+    ->  Restarts (Model f s, Double)
     -> ScoringMetric IsRelevant q
-    -> [TrainedResult f ph q d]
-dumpFullModelsAndRankings trainData (model, trainScore) metric  =
-    let modelDesc = "train"
-        trainRanking = rerankRankings' model trainData
-    in  [TrainedResult {model = Just model 
-                    , ranking = trainRanking
-                    , testData = M.empty
-                    , modelDesc = modelDesc
-                    , foldNo = Nothing
-                    , restartNo = Nothing
-                    , crossValidated = Just False
-                    , testMap = Nothing
-                    , trainMap = Nothing
-                    , metric = metric
-                    }  
+    -> Restarts (TrainedResult f s q d)
+dumpFullModelsAndRankings trainData restartModels metric =
+    Restarts
+      [ TrainedResult { model = Just model
+                      , ranking = ranking
+                      , testData = trainData
+                      , modelDesc = modelDesc
+                      , foldNo = Nothing
+                      , restartNo = Just $ fromIntegral restartNo
+                      , crossValidated = Just False
+                      , trainMap = Just trainScore
+                      , testMap = Nothing
+                      , metric = metric
+                      }
+        | (RestartIdx restartNo, ~(model, trainScore)) <- toList $ indexedRestarts restartModels
+        , let ranking = rerankRankings' model trainData
+        , let modelDesc = "full-restart-"<> show restartNo
         ]
+    
+
+
+
+
+-- dumpFullModelsAndRankings
+--     :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
+--     => M.Map q [(d, FeatureVec f ph Double, Rel)]
+--     -> (Model f ph, Double)
+--     -- -> [TrainedResult f ph q d]
+--     -> ScoringMetric IsRelevant q
+--     -> TrainedResult f ph q d
+-- dumpFullModelsAndRankings trainData (model, trainScore) metric  =
+--     let modelDesc = "train"
+--         trainRanking = rerankRankings' model trainData
+--     in  TrainedResult {model = Just model 
+--                     , ranking = trainRanking
+--                     , testData = M.empty
+--                     , modelDesc = modelDesc
+--                     , foldNo = Nothing
+--                     , restartNo = Nothing
+--                     , crossValidated = Just False
+--                     , testMap = Nothing
+--                     , trainMap = Nothing
+--                     , metric = metric
+--                     }  
+        
 
 
 -- storeModelAndRanking ::  forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)  
