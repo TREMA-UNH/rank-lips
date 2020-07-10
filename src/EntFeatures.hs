@@ -225,10 +225,7 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
         modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just rankLipsVersion) defaultFeatureParamsOpt
 
-
     putStrLn $ unlines $ fmap show $ Data.List.take 10 $ M.toList allDataList
-
-
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
@@ -275,12 +272,8 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
             RankLips.storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
             return model
 
-        -- strat :: Strategy [RankLips.TrainedResult f s q d]
-        -- strat = parBuffer 24 rseq
-    
         (cvComputation, fullComputation) = withStrategy (parTuple2 (parTraversable rseq) rseq)
                                           $ RankLips.mapCvFull RankLips.bestRestart (foldRestartResults, fullRestartResults)
-                              
 
     if includeCv 
     then do
