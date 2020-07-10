@@ -217,7 +217,7 @@ opts = subparser
             writeJsonLQrelFile outputFile qrels
           where  
             convD :: QRel.DocumentName -> RankData
-            convD txt = singletonRankData qrelField txt
+            convD txt = singletonRankData qrelField (RankDataText txt)
             
     doConvRuns' =
         f <$> option str (long "output" <> short 'o' <> help "location of new run file" <> metavar "FILE")     
@@ -230,7 +230,7 @@ opts = subparser
             writeJsonLRunFile outputFile runData
           where  
             convD :: SimplirRun.DocumentName -> RankData
-            convD txt = singletonRankData runField txt
+            convD txt = singletonRankData runField (RankDataText txt)
             
     doExportRuns' =
         f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
@@ -243,9 +243,10 @@ opts = subparser
             writeTrecEvalRunFile outputFile runData id convD
           where  
             convD :: RankData -> SimplirRun.DocumentName
-            convD (RankData m) = fromMaybe (errMsg m) $ runField `M.lookup` m
+            convD (RankData m) = fromMaybe (errMsg m) $ fmap unwrap $ runField `M.lookup` m
             errMsg m = error $ "Can't find field "<> show runField <>" in json object "<> show m
-
+            unwrap (RankDataText t) = t
+            unwrap (RankDataList l) = T.intercalate "," l
 
 
 debugTr :: (x -> String) ->  x -> x

@@ -52,7 +52,8 @@ import SimplIR.FeatureSpace.Normalise
 import qualified SimplIR.Format.QRel as QRel
 
 import RankLipsTypes
-import FeaturesAndSetup
+import qualified FeaturesAndSetup as RankLips
+import qualified TrainAndSave as RankLips
 import QrelInfo
 import RankLipsFeatureUtils
 import JsonRunQrels
@@ -149,7 +150,13 @@ resolveAssociations assocs query doc =
         ]
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
-            part `M.isSubmapOf` whole
+            (part `M.isSubmapOf` whole) 
+            --   ||  Data.List.all 
+            --     [ case (key M.lookup whole) of 
+            --             Just vals -> Data.List.all [ v <- val] 
+            --     | (key,val) <- M.toList part
+            --     ] 
+                
 
 
 doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
@@ -175,7 +182,7 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
-    runFiles <- loadJsonLRunFiles featureRunsDirectory features
+    runFiles <- RankLips.loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     assocs <- readJsonLRunFile assocsFile
@@ -212,14 +219,14 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
                         modelConv (Model (WeightVec weights)) = Model (WeightVec $ denormWeights zNorm weights)
 
-                    in (featureDataListZscore, createModelEnvelope modelConv)
+                    in (featureDataListZscore, RankLips.createModelEnvelope modelConv)
 
-                else (featureDataList, createModelEnvelope id)
+                else (featureDataList, RankLips.createModelEnvelope id)
 
         featureDataListProjected = projectFeatureSpace projD featureDataList'     ----   d -> d'
 
         allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
-        allDataListRaw = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataListProjected
+        allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataListProjected
 
         allDataList = allDataListRaw
 
@@ -230,6 +237,65 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
+
+
+
+
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d)
+      =>  Bool
+      -> F.FeatureSpace Feat ph
+      -> TrainData Feat ph q d
+      -> [QRel.Entry q d IsRelevant]
+      -> MiniBatchParams
+      -> ConvergenceDiagParams
+      -> FilePath
+      -> (Maybe Integer -> Maybe [q] -> Model Feat ph -> RankLipsModelSerialized Feat)
+      -> IO()
+train includeCv fspace allData qrel miniBatchParams convergenceDiagParams outputFilePrefix modelEnvelope =  do
+    let metric :: ScoringMetric IsRelevant q
+        !metric = meanAvgPrec (totalRelevantFromQRels qrel) Relevant
+        totalElems = getSum . foldMap ( Sum . Data.List.length ) $ allData
+        totalPos = getSum . foldMap ( Sum . Data.List.length . Data.List.filter (\(_,_,rel) -> rel == Relevant)) $ allData
+
+    putStrLn $ "Feature dimension: "++show (F.dimension $ F.featureSpace $ (\(_,a,_) -> a) $ head' $ snd $ M.elemAt 0 allData)
+    putStrLn $ "Training model with (trainData) "++ show (M.size allData) ++
+            " queries and "++ show totalElems ++" items total of which "++
+            show totalPos ++" are positive."
+    let displayTrainData :: Show f => TrainData f ph q d -> [String]
+        displayTrainData trainData =
+            [ show k ++ " " ++ show d ++ " " ++ show r ++ " -> "++ prettyFv
+            | (k,list) <- M.toList trainData
+            , (d,fvec, r) <- list
+            , let prettyFv = unlines $ fmap show $ F.toList fvec
+            ]
+
+    putStrLn $ "Training Data = \n" ++ intercalate "\n" (Data.List.take 10 $ displayTrainData $ force allData)
+    gen0 <- newStdGen  -- needed by learning to rank
+
+    let experimentName = ""
+
+    putStrLn "made folds"
+    let (fullRestartResults, foldRestartResults) =
+            RankLips.trainMe miniBatchParams convergenceDiagParams gen0 allData fspace metric
+
+    let savedTrainedResult model = do
+            RankLips.storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
+            return model
+
+        strat :: Strategy [RankLips.TrainedResult f s q d]
+        strat = parBuffer 24 rseq
+    
+    (cvModels, fullModels) <- RankLips.mapCvFull savedTrainedResult
+                            $ withStrategy (parTuple2 (parTraversable rseq) rseq)
+                            $ ( fmap RankLips.bestRestart  (foldRestartResults)
+                              , (RankLips.bestRestart fullRestartResults)
+                              )
+
+    let testRanking = RankLips.computeTestRanking  $ cvModels
+    _ <- savedTrainedResult testRanking
+    return ()
+
+
 
 
 

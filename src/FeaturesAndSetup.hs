@@ -279,9 +279,31 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainAndStore includeCv miniBatchParams convergenceDiagParams
-            gen0 allData fspace metric outputFilePrefix "" modelEnvelope
+    -- trainAndStore includeCv miniBatchParams convergenceDiagParams    gen0 allData fspace metric outputFilePrefix "" modelEnvelope
+    -- trainAndStore includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
 
+    let experimentName = ""
+
+    putStrLn "made folds"
+    let (fullRestartResults, foldRestartResults) =
+            trainMe miniBatchParams convergenceDiagParams gen0 allData fspace metric
+
+    let savedTrainedResult model = do
+            storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
+            return model
+
+        strat :: Strategy [TrainedResult f s q d]
+        strat = parBuffer 24 rseq
+    
+    (cvModels, fullModels) <- mapCvFull savedTrainedResult
+                            $ withStrategy (parTuple2 (parTraversable rseq) rseq)
+                            $ ( fmap bestRestart  (foldRestartResults)
+                              , (bestRestart fullRestartResults)
+                              )
+
+    let testRanking = computeTestRanking  $ cvModels
+    _ <- savedTrainedResult testRanking
+    return ()
 
 
 
