@@ -29,9 +29,7 @@ import Data.Semigroup hiding (All, Any, option)
 import System.Random
 import System.FilePath
 
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
-import qualified Data.Text as T
 import Data.List
 import Data.Maybe
 
@@ -47,48 +45,11 @@ import qualified SimplIR.Format.QRel as QRel
 import TrainAndSave
 import RankLipsTypes
 import Data.Bifunctor (Bifunctor(second))
-import GHC.Generics (Generic)
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import JsonRunQrels
 import QrelInfo
 import RankLipsFeatureUtils
-
--- convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
--- convertFeatureNames featureVariants features = 
---     S.fromList $ [ augmentFname ft run 
---                 | run <-  features
---                 , ft <- featureVariants
---                 ]
-
-
--- augmentFname :: FeatureVariant -> FilePath -> Feat
--- augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
-
-
-
--- featureSet :: FeatureParams -> FeatureSet q d
--- featureSet FeatureParams{..} =
---     let
---         featureNames :: S.Set Feat
---         featureNames = convertFeatureNames featureVariants features 
-
---         produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
---         produceFeatures fname SimplirRun.RankingEntry{..} =
---             [ produceFeature ft
---             | ft <- featureVariants
---             ]
---           where produceFeature :: FeatureVariant -> (Feat, Double)
---                 produceFeature FeatScore = 
---                     ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
---                 produceFeature FeatRecipRank = 
---                     ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
-
---     in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
-
-
 
 
 
@@ -114,27 +75,6 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagP
     )
 
 
-
--- createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
--- createDefaultFeatureVec fspace defaultFeatureParamsOpt =
---         F.fromList fspace 
---         $ case  defaultFeatureParamsOpt of
---             Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
---             Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
---                                                         | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
---                                                         , (fv', val) <- fvVals
---                                                         , fv' == fv
---                                                         ]
---             Just (DefaultFeatureValue fVals) -> [ (f, val )
---                                                         | f@Feat{featureName = fname} <- F.featureNames fspace
---                                                         , (fname', val) <- fVals
---                                                         , fname' == fname
---                                                         ]
---             Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
-
---             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
-
-
 doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d, Aeson.FromJSON q, Aeson.FromJSON d)
              => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
@@ -144,7 +84,6 @@ doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d,
             -> Maybe FilePath 
             -> IO () 
 doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
-
     let fspace = modelFeatures model
         defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
@@ -160,8 +99,6 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
     QrelInfo{..} <- case qrelFileOpt of
                         Just qrelFile -> do
                             loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
-                                        -- :: IO [QRel.Entry q d QRel.IsRelevant]
-                            --  qrelData'
                         Nothing -> return $ noQrelInfo
 
 
@@ -277,9 +214,31 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    trainMe includeCv miniBatchParams convergenceDiagParams
-            gen0 allData fspace metric outputFilePrefix "" modelEnvelope
+    -- trainAndStore includeCv miniBatchParams convergenceDiagParams    gen0 allData fspace metric outputFilePrefix "" modelEnvelope
+    -- trainAndStore includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
 
+    let experimentName = ""
+
+    putStrLn "made folds"
+    let (fullRestartResults, foldRestartResults) =
+            trainMe miniBatchParams convergenceDiagParams gen0 allData fspace metric
+
+    let savedTrainedResult model = do
+            storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
+            return model
+
+        strat :: Strategy [TrainedResult f s q d]
+        strat = parBuffer 24 rseq
+    
+    (cvModels, fullModels) <- mapIOCvFull savedTrainedResult
+                            $ withStrategy (parTuple2 (parTraversable rseq) rseq)
+                            $ ( fmap bestRestart  (foldRestartResults)
+                              , (bestRestart fullRestartResults)
+                              )
+
+    let testRanking = computeTestRanking  $ cvModels
+    _ <- savedTrainedResult testRanking
+    return ()
 
 
 

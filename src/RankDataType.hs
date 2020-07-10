@@ -42,65 +42,74 @@ newtype RankDataField = RankDataField { unDataField :: T.Text }
     deriving stock (Eq, Ord, Show, Generic)
     deriving newtype (Aeson.FromJSON, Aeson.FromJSONKey, Aeson.ToJSON, Aeson.ToJSONKey, NFData)
 
-newtype RankData = RankData { unData :: M.Map RankDataField T.Text}
+data RankDataValue = RankDataText {unRankDataText :: T.Text} | RankDataList {unRankDataList :: [T.Text]}
     deriving stock (Eq, Ord, Show, Generic)
-    deriving newtype ( Aeson.ToJSON, NFData)
+    deriving anyclass ( NFData)
+
+newtype RankData = RankData { unData :: M.Map RankDataField RankDataValue}
+    deriving stock (Eq, Ord, Show, Generic)
+    deriving anyclass ( NFData)
 
 
 instance FromJSON RankData where
-    parseJSON (Aeson.String str) = 
-        return $ singletonRankData (RankDataField "id") str
- 
-    parseJSON (Aeson.Number n) = 
-        return $  singletonRankData (RankDataField "id") (T.pack $ renderScientific n)
-      where renderScientific n = 
-                Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
- 
-    parseJSON (Aeson.Bool b) = 
-        return $  singletonRankData (RankDataField "id") (T.pack $ show b)
- 
-    parseJSON (Aeson.Array arr) = 
-        return $  singletonRankData (RankDataField "id") (T.intercalate "," $ fmap (T.pack . show) $ Vector.toList arr)
- 
     parseJSON (Aeson.Object obj) =
         return $ RankData $ M.fromList [(RankDataField key, parseJSONValue val) | (key, val) <- HM.toList obj]
 
-     where
-      parseJSONValue (Aeson.String str) = 
-        str
+    parseJSON x@(Aeson.Array arr) = 
+        return $  singletonRankData (RankDataField "id") $ parseJSONValue x
+
+    parseJSON x  = 
+        return $ singletonRankData (RankDataField "id") $ parseJSONValue x
  
-      parseJSONValue (Aeson.Number n) = 
-        (T.pack $ renderScientific n)
-       where renderScientific n = 
-                Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
+    
 
-      parseJSONValue (Aeson.Bool b) = 
-        (T.pack $ show b)
- 
-      parseJSONValue (Aeson.Array arr) = 
-        (T.intercalate "," $ fmap (T.pack . show) $ Vector.toList arr)
- 
-      parseJSONValue (Aeson.Object obj) =
-        error $ "RankData does not support nested objects, but received "<> show obj
 
-      parseJSONValue x = error $ "Can't parse nested RankData values from "<> show x
+parseJSONValue :: Aeson.Value -> RankDataValue 
+parseJSONValue (Aeson.String str) = 
+  RankDataText str
 
-    parseJSON x = fail $ "Can't parse RankData from "<> show x
+parseJSONValue (Aeson.Number n) = 
+    RankDataText (T.pack $ renderScientific n)
+    where renderScientific n = 
+            Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
 
+parseJSONValue (Aeson.Bool b) = 
+    RankDataText (T.pack $ show b)
+
+parseJSONValue (Aeson.Array arr) = 
+    RankDataList $ fmap (T.pack . show) $ Vector.toList arr
+
+parseJSONValue (Aeson.Object obj) =
+    error $ "RankData does not support nested objects, but received "<> show obj
+
+parseJSONValue x = error $ "Can't parse nested RankData values from "<> show x
+
+
+instance ToJSON RankData where
+    toJSON (RankData map) = 
+        Aeson.toJSON $ fmap unwrapRankDataValue map
+      where unwrapRankDataValue (RankDataText t) = Aeson.toJSON t
+            unwrapRankDataValue (RankDataList l) = Aeson.toJSON l
+
+
+
+    
 instance Render RankData where
     render rd@(RankData m) = 
         case M.size m of
-            1 -> head $ M.elems m
+            1 -> case head $ M.elems m of
+                    RankDataText t -> t
+                    RankDataList l -> "[" <> ( T.intercalate ", " l) <> "]"
             0 -> error $ "can't render empty RankData."
             _ -> T.pack $ BSL.unpack $ Aeson.encode rd
 
 
 
-modRankData :: (M.Map RankDataField T.Text -> M.Map RankDataField T.Text) -> RankData -> RankData
+modRankData :: (M.Map RankDataField RankDataValue -> M.Map RankDataField RankDataValue) -> RankData -> RankData
 modRankData mod (RankData x) =
     RankData $ mod x
 
-singletonRankData :: RankDataField -> T.Text -> RankData
+singletonRankData :: RankDataField -> RankDataValue -> RankData
 singletonRankData field value = 
     RankData $ M.singleton field value
 

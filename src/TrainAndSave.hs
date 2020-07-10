@@ -17,6 +17,8 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE MonadComprehensions #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 
@@ -25,113 +27,52 @@ module TrainAndSave where
 import qualified Data.Aeson as Aeson
 import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 import qualified Data.Map.Strict as M
--- import qualified Data.Set as S
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
--- import Data.Maybe
 
-import Data.Function
-import Data.Bifunctor
 import System.Random
 import Control.Parallel.Strategies
-import Control.Concurrent.Map
 import Control.DeepSeq
+import Data.Ord
 
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
 
--- import qualified SimplIR.Format.QRel as QRel
 import qualified SimplIR.Ranking as Ranking
 import SimplIR.TrainUtils
 
 import Debug.Trace as Debug
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
--- import GHC.Generics (Generic)
--- import GHC.Stack (HasCallStack)
--- import Data.Functor.Contravariant (Contravariant(contramap))
 
 import RankLipsTypes
+import Data.Maybe
+import GHC.Base (when)
 
 type ModelEnvelope f s = Model f s -> RankLipsModelSerialized f
 
 
 -- --------------------------------------------
 
-trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
-        => Bool
-        -> MiniBatchParams
-        -> ConvergenceDiagParams
-        -> StdGen
-        -> TrainData f s q d
-        -> FeatureSpace f s
-        -> ScoringMetric IsRelevant q
-        -> FilePath
-        -> FilePath
-        -> (Maybe Integer -> Maybe [q] -> Model f s -> RankLipsModelSerialized f)
-        -> IO ()
-trainMe includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
-          -- train me!
-          let nRestarts = convergenceRestarts convDiagParams
-              nFolds = convergenceFolds convDiagParams
-
-
-          -- folded CV
-                                -- todo load external folds
-              !folds = force $ mkSequentialFolds nFolds (M.keys trainData)
-          putStrLn "made folds"
-          putStrLn $ unwords [ show $ length f | f <- getFolds folds ]
-
-          let trainFun :: FoldIdx -> TrainData f s q d -> [(Model f s, Double)]
-              trainFun foldIdx =
-                  take nRestarts . trainWithRestarts miniBatchParams convDiagParams gen0 metric infoStr fspace
-                where
-                  infoStr = show foldIdx
-
-              foldRestartResults :: Folds (M.Map  q [(d, FeatureVec f s Double, Rel)], [(Model f s, Double)])
-              foldRestartResults = trainKFolds trainFun trainData folds
-
-              strat :: Strategy (Folds (a, [(Model f s, Double)]))
-              strat = parTraversable (evalTuple2 r0 (parTraversable rdeepseq))
-          
-          putStrLn "full Train"
-          -- full train
-          let fullRestarts = withStrategy (parTraversable rdeepseq)
-                             $ take nRestarts $ trainWithRestarts miniBatchParams convDiagParams gen0 metric "full" fspace trainData
-              (model, trainScore) = Debug.trace ("full Train - best Model") 
-                                  $    bestModel $  fullRestarts
-              fullActions = Debug.trace ("full Train - dump Model")
-                          $ dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope
-
-
-          putStrLn "CV Train"
-          if includeCv
-            then do
-              foldRestartResults' <- withStrategyIO strat foldRestartResults
-              let cvActions = dumpKFoldModelsAndRankings foldRestartResults' metric outputFilePrefix experimentName modelEnvelope
-              putStrLn "concurrently: CV Train"
-              mapConcurrentlyL_ 24 id $ fullActions ++ cvActions
-            else
-              mapConcurrentlyL_ 24 id $ fullActions
-          putStrLn "dumped all models and rankings"
-
 
 
 trainWithRestarts
     :: forall f s q d . (ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
-    => MiniBatchParams
+    => Int
+    -> MiniBatchParams
     -> ConvergenceDiagParams
     -> StdGen
     -> ScoringMetric IsRelevant q
     -> String
     -> FeatureSpace f s
     -> TrainData f s q d
-    -> [(Model f s, Double)]
+    -- -> [(Model f s, Double)]
+    -> Restarts (Model f s, Double)
        -- ^ an infinite list of restarts
-trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
+trainWithRestarts nRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
   let trainData' = discardUntrainable trainData
 
       rngSeeds :: [StdGen]
@@ -146,7 +87,7 @@ trainWithRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIt
           info' = info <> " restart " <> show restart
       modelsWithTrainScore :: [(Model f s,Double)]
       modelsWithTrainScore = zipWith restartModel [0..] rngSeeds
-     in modelsWithTrainScore
+     in Restarts $ take nRestarts modelsWithTrainScore
 
 
 discardUntrainable :: TrainData f s q d -> TrainData f s q d
@@ -158,14 +99,6 @@ discardUntrainable evalData =
             hasNeg = any (\(_,_,r) -> r /= Relevant) list
         in hasPos && hasNeg
 
-
-bestPerFold :: FoldRestartResults f s q d -> BestFoldResults f s q d
-bestPerFold = fmap (second bestModel)
-
-bestModel ::  [(Model f s, Double)] -> (Model f s, Double)
-bestModel = maximumBy (compare `on` snd)
-
-
 bestRankingPerFold :: forall f s q d. ()
                    => BestFoldResults f s q d
                    -> Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
@@ -174,67 +107,88 @@ bestRankingPerFold bestPerFold' =
 
 
 
+data TrainedResult f s q d
+    = TrainedResult
+        { model :: Maybe (Model f s)
+        , ranking :: M.Map q (Ranking Score (d, Rel))
+        , testData :: M.Map q [(d, FeatureVec f s Double, Rel)]
+        , modelDesc :: String
+        , foldNo :: Maybe Integer
+        , restartNo :: Maybe Integer
+        , crossValidated :: Maybe Bool
+        , trainMap :: Maybe Double
+        , testMap :: Maybe Double
+        , metric :: ScoringMetric IsRelevant q
+        }
+
+
 dumpKFoldModelsAndRankings
     :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
-    => FoldRestartResults f s q d
+    => Folds ( M.Map q [(d, FeatureVec f s Double, Rel)]
+             , Restarts (Model f s, Double)
+             )
+       -- ^ test data and model restarts for each fold
     -> ScoringMetric IsRelevant q
-    -> FilePath
-    -> FilePath
-    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f s)
-    -> [IO ()]
-dumpKFoldModelsAndRankings foldRestartResults metric outputFilePrefix experimentName modelEnvelope =
-    let bestPerFold' :: Folds (M.Map q [(d, FeatureVec f s Double, Rel)], (Model f s, Double))
-        bestPerFold' = bestPerFold foldRestartResults
+    -> Folds (Restarts (TrainedResult f s q d))
+dumpKFoldModelsAndRankings foldRestartResults metric =
+    Folds
+    [ Restarts
+      [ TrainedResult { model = Just model
+                      , ranking = ranking
+                      , testData = testData
+                      , modelDesc = modelDesc
+                      , foldNo = Just $ fromIntegral foldNo
+                      , restartNo = Just $ fromIntegral restartNo
+                      , crossValidated = Nothing
+                      , trainMap = Just trainScore
+                      , testMap = Nothing
+                      , metric = metric
+                      }
+        | (RestartIdx restartNo, ~(model, trainScore)) <- toList $ indexedRestarts restartModels
+        , let ranking = rerankRankings' model testData
+        , let modelDesc = "fold-"<> show foldNo <> "-restart-"<> show restartNo
+        ]
+    | (FoldIdx foldNo, ~(testData, restartModels)) <- toList $ indexedFolds foldRestartResults
+    ]
 
-        bestRankingPerFold' :: Folds (M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel)))
-        bestRankingPerFold' = bestRankingPerFold bestPerFold'
-
-        testRanking ::   M.Map q (Ranking SimplIR.LearningToRank.Score (d, Rel))
-        testRanking = fold bestRankingPerFold'
-
-        _testScore = metric testRanking
-
---         dumpAll = [ do storeRankingData outputFilePrefix ranking metric modelDesc
---                        storeModelData outputFilePrefix experimentName model trainScore modelDesc
---                   | (foldNo, ~(testData, restartModels))  <- zip [0..] $ toList foldRestartResults
---                   , (restartNo, ~(model, trainScore)) <- zip [0..] restartModels
---                   , let ranking = rerankRankings' model testData
---                   , let modelDesc = "fold-"<> show foldNo <> "-restart-"<> show restartNo
---                   ]
-
-        dumpAll = []
-
-        dumpBest =
-            [ do storeRankingData outputFilePrefix ranking metric modelDesc
-                 storeModelData outputFilePrefix experimentName model trainScore modelDesc (modelEnvelope (Just foldNo) (Just $  M.keys testData))
-            | (foldNo, (testData,  ~(model, trainScore)))  <- zip [0 :: Integer ..]
-                                                              $ toList bestPerFold'
-            , let ranking = rerankRankings' model testData
-            , let modelDesc = "fold-"<> show foldNo <> "-best"
-            ]
-
-        dumpKfoldTestRanking = storeRankingData outputFilePrefix testRanking metric modelDesc
-          where modelDesc = "test"
-
-    in dumpAll ++ dumpBest ++ [dumpKfoldTestRanking]
 
 
 
 dumpFullModelsAndRankings
-    :: forall f ph q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
-    => M.Map q [(d, FeatureVec f ph Double, Rel)]
-    -> (Model f ph, Double)
+    :: forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)
+    =>  M.Map q [(d, FeatureVec f s Double, Rel)]
+    ->  Restarts (Model f s, Double)
     -> ScoringMetric IsRelevant q
+    -> Restarts (TrainedResult f s q d)
+dumpFullModelsAndRankings trainData restartModels metric =
+    Restarts
+      [ TrainedResult { model = Just model
+                      , ranking = ranking
+                      , testData = trainData
+                      , modelDesc = modelDesc
+                      , foldNo = Nothing
+                      , restartNo = Just $ fromIntegral restartNo
+                      , crossValidated = Just False
+                      , trainMap = Just trainScore
+                      , testMap = Nothing
+                      , metric = metric
+                      }
+        | (RestartIdx restartNo, ~(model, trainScore)) <- toList $ indexedRestarts restartModels
+        , let ranking = rerankRankings' model trainData
+        , let modelDesc = "train-restart-"<> show restartNo
+        ]
+    
+
+
+storeModelAndRanking ::  forall f s q d. (Ord f, ToJSONKey f,  NFData q, Ord q, Show q, Show d, Render q, Render d)  
+    => FilePath
     -> FilePath
-    -> FilePath
-    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f ph)
-    -> [IO()]
-dumpFullModelsAndRankings trainData (model, trainScore) metric outputFilePrefix experimentName modelEnvelope =
-    let modelDesc = "train"
-        trainRanking = rerankRankings' model trainData
-    in [ storeRankingData outputFilePrefix trainRanking metric modelDesc
-       , storeModelData outputFilePrefix experimentName model trainScore modelDesc (modelEnvelope Nothing Nothing)
-       ]
+    -> (Maybe Integer -> Maybe [q] -> ModelEnvelope f s)
+    -> TrainedResult f s q d -> IO()
+storeModelAndRanking outputFilePrefix experimentName modelEnvelope TrainedResult{..} = do
+    storeRankingData outputFilePrefix ranking metric modelDesc
+    when (isJust model) $
+            storeModelData outputFilePrefix experimentName (fromJust model) (Data.Maybe.fromMaybe 0.0 trainMap) modelDesc (modelEnvelope foldNo (Just $  M.keys testData))
 
 
 
@@ -281,11 +235,6 @@ loadOldModelData modelFile  = do
       Left msg -> error $ "Issue deserializing model file "<> modelFile<> ": "<> msg
       Right model -> model
 
-
-
-
-
-
 storeRankingData ::  forall q d . (Show q, Show d, Render q, Render d) 
                 => FilePath
                -> M.Map  q (Ranking Double (d, IsRelevant))
@@ -311,4 +260,84 @@ storeRankingDataNoMetric outputFilePrefix ranking modelDesc = do
   SimplirRun.writeRunFile (runFile')
        $ l2rRankingToRankEntries (T.pack $ "l2r "++modelDesc)
        $ ranking
+
+mapIOCvFull :: (a -> IO b) -> (Folds a, a) -> IO (( Folds b), b) 
+mapIOCvFull f (cvModels, fullModels) = do
+    (,) <$> mapM f cvModels <*> f fullModels
+
+mapCvFull :: (a -> b) -> (Folds a, a) -> (( Folds b), b) 
+mapCvFull f (cvModels, fullModels) = do
+    ( fmap f cvModels, f fullModels)
+
+
+bestRestartBy :: (a -> a -> Ordering) -> Restarts a -> a
+bestRestartBy f = maximumBy f
+
+bestRestart :: Restarts (TrainedResult f s q d) -> TrainedResult f s q d
+bestRestart models =
+    let trained = bestRestartBy (comparing trainMap) models
+    in trained { modelDesc = case (foldNo trained) of 
+                                      Just no -> "fold-"<> show (no) <> "-best"
+                                      Nothing -> "train"
+               }
+
+
+computeTestRanking :: forall f s q d. (Ord q)
+                   => Folds (TrainedResult f s q d) -> TrainedResult f s q d
+computeTestRanking foldResults =
+    TrainedResult { model = Nothing
+                  , ranking = testRanking
+                  , testData = M.empty
+                  , modelDesc = "test"
+                  , foldNo = Nothing
+                  , restartNo = Nothing
+                  , crossValidated = Just True
+                  , trainMap = Nothing
+                  , testMap = Just testScore
+                  , metric = metric'
+                  }
+  where
+    testRanking :: M.Map q (Ranking Score (d, Rel))
+    testRanking = Foldable.foldMap (\TrainedResult {testData = testData, model = Just model} -> rerankRankings' model testData) foldResults
+
+    metric' :: ScoringMetric IsRelevant q
+    metric' = metric $ head $ toList foldResults
+    testScore = metric' testRanking
+
+trainMe :: forall f s q d. (Ord f, ToJSONKey f, Show f, NFData q, Ord q, Show q, Show d, Render q, Render d)
+        => MiniBatchParams
+        -> ConvergenceDiagParams
+        -> StdGen
+        -> TrainData f s q d
+        -> FeatureSpace f s
+        -> ScoringMetric IsRelevant q
+        -> (Restarts (TrainedResult f s q d), Folds (Restarts (TrainedResult f s q d) ))
+trainMe miniBatchParams convDiagParams gen0 trainData fspace metric =
+  -- train me!
+  let nRestarts = convergenceRestarts convDiagParams
+      nFolds = convergenceFolds convDiagParams
+
+      -- folded CV
+      -- todo load external folds
+      !folds = force $ mkSequentialFolds nFolds (M.keys trainData)
+      trainFun :: FoldIdx -> TrainData f s q d -> Restarts (Model f s, Double)
+      trainFun foldIdx =
+          trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric infoStr fspace
+        where
+          infoStr = show foldIdx
+
+      foldRestartResults :: Folds (M.Map q [(d, FeatureVec f s Double, Rel)], Restarts (Model f s, Double))
+      foldRestartResults = trainKFolds trainFun trainData folds
+  
+      -- full train
+      fullRestarts :: Restarts (Model f s, Double)
+      fullRestarts = trainWithRestarts nRestarts miniBatchParams convDiagParams gen0 metric "train" fspace trainData
+    --   bestFull = bestRestart (comparing snd) fullRestarts
+
+      fullActions :: Restarts (TrainedResult f s q d)
+      fullActions = dumpFullModelsAndRankings trainData fullRestarts metric
+
+      folds' :: Folds (Restarts (TrainedResult f s q d))
+      folds' = dumpKFoldModelsAndRankings foldRestartResults metric 
+  in  (fullActions, folds')
 
