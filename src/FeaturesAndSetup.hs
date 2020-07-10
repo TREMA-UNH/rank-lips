@@ -29,9 +29,7 @@ import Data.Semigroup hiding (All, Any, option)
 import System.Random
 import System.FilePath
 
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
-import qualified Data.Text as T
 import Data.List
 import Data.Maybe
 
@@ -45,51 +43,13 @@ import SimplIR.FeatureSpace.Normalise
 import qualified SimplIR.Format.QRel as QRel
 
 import TrainAndSave
-import NewTrainAndSave
 import RankLipsTypes
 import Data.Bifunctor (Bifunctor(second))
-import GHC.Generics (Generic)
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import JsonRunQrels
 import QrelInfo
 import RankLipsFeatureUtils
-
--- convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
--- convertFeatureNames featureVariants features = 
---     S.fromList $ [ augmentFname ft run 
---                 | run <-  features
---                 , ft <- featureVariants
---                 ]
-
-
--- augmentFname :: FeatureVariant -> FilePath -> Feat
--- augmentFname featureVariant fname = Feat $ FeatNameInputRun fname featureVariant
-
-
-
--- featureSet :: FeatureParams -> FeatureSet q d
--- featureSet FeatureParams{..} =
---     let
---         featureNames :: S.Set Feat
---         featureNames = convertFeatureNames featureVariants features 
-
---         produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
---         produceFeatures fname SimplirRun.RankingEntry{..} =
---             [ produceFeature ft
---             | ft <- featureVariants
---             ]
---           where produceFeature :: FeatureVariant -> (Feat, Double)
---                 produceFeature FeatScore = 
---                     ((Feat $ FeatNameInputRun fname FeatScore), documentScore)
---                 produceFeature FeatRecipRank = 
---                     ((Feat $ FeatNameInputRun  fname FeatRecipRank), (1.0/(realToFrac documentRank)))  
-
---     in FeatureSet {featureNames=featureNames, produceFeatures = produceFeatures}
-
-
 
 
 
@@ -115,27 +75,6 @@ createModelEnvelope modelConv experimentName minibatchParamsOpt convergenceDiagP
     )
 
 
-
--- createDefaultFeatureVec :: forall ph . F.FeatureSpace Feat ph ->  Maybe (DefaultFeatureParams) -> FeatureVec Feat ph Double
--- createDefaultFeatureVec fspace defaultFeatureParamsOpt =
---         F.fromList fspace 
---         $ case  defaultFeatureParamsOpt of
---             Just (DefaultFeatureSingleValue val) ->   [ (fname, val)  | fname <- F.featureNames fspace]
---             Just (DefaultFeatureVariantValue fvVals) -> [ (f, val )
---                                                         | f@Feat{featureName = FeatNameInputRun { featureVariant=fv }} <- F.featureNames fspace
---                                                         , (fv', val) <- fvVals
---                                                         , fv' == fv
---                                                         ]
---             Just (DefaultFeatureValue fVals) -> [ (f, val )
---                                                         | f@Feat{featureName = fname} <- F.featureNames fspace
---                                                         , (fname', val) <- fVals
---                                                         , fname' == fname
---                                                         ]
---             Nothing -> [ (fname, 0.0)  | fname <- F.featureNames fspace]
-
---             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
-
-
 doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d, Aeson.FromJSON q, Aeson.FromJSON d)
              => (SimplirRun.QueryId -> q) -> (SimplirRun.DocumentName -> d) 
             -> FeatureParams
@@ -145,40 +84,36 @@ doPredict :: forall ph q d  . (Ord q, Ord d, Show q, Show d, Render q, Render d,
             -> Maybe FilePath 
             -> IO () 
 doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFeatureParamsOpt model qrelFileOpt  = do
-    putStrLn "doPredict is commented out"
+    let fspace = modelFeatures model
+        defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
+        FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
+           = featureSet featureParams
 
-    -- let fspace = modelFeatures model
-    --     defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
-    --     FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
-    --        = featureSet featureParams
+    runFiles <- if featuresFromJsonL
+                    then loadRunFiles convQ convD featureRunsDirectory features
+                    else loadJsonLRunFiles featureRunsDirectory features
 
-    -- runFiles <- if featuresFromJsonL
-    --                 then loadRunFiles convQ convD featureRunsDirectory features
-    --                 else loadJsonLRunFiles featureRunsDirectory features
-
-    -- putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
+    putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
 
-    -- QrelInfo{..} <- case qrelFileOpt of
-    --                     Just qrelFile -> do
-    --                         loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
-    --                                     -- :: IO [QRel.Entry q d QRel.IsRelevant]
-    --                         --  qrelData'
-    --                     Nothing -> return $ noQrelInfo
+    QrelInfo{..} <- case qrelFileOpt of
+                        Just qrelFile -> do
+                            loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
+                        Nothing -> return $ noQrelInfo
 
 
-    -- let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
-    --     featureDataList = fmap M.toList featureDataMap
+    let featureDataMap = runFilesToFeatureVectorsMap fspace defaultFeatureVec produceFeatures runFiles
+        featureDataList = fmap M.toList featureDataMap
 
-    --     allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
-    --     allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
+        allDataList :: M.Map q [( d, FeatureVec Feat ph Double, QRel.IsRelevant)]
+        allDataList = augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
 
-    --     ranking = withStrategy (parTraversable rseq) 
-    --             $ rerankRankings' model allDataList    
+        ranking = withStrategy (parTraversable rseq) 
+                $ rerankRankings' model allDataList    
 
-    -- case qrelFileOpt of
-    --     Just _ -> storeRankingData outputFilePrefix ranking metric "predict"
-    --     Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
+    case qrelFileOpt of
+        Just _ -> storeRankingData outputFilePrefix ranking metric "predict"
+        Nothing -> storeRankingDataNoMetric outputFilePrefix ranking "predict"
 
 
 doTrain :: forall q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Aeson.FromJSON q, Aeson.FromJSON d, Render q, Render d)
@@ -295,7 +230,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
         strat :: Strategy [TrainedResult f s q d]
         strat = parBuffer 24 rseq
     
-    (cvModels, fullModels) <- mapCvFull savedTrainedResult
+    (cvModels, fullModels) <- mapIOCvFull savedTrainedResult
                             $ withStrategy (parTuple2 (parTraversable rseq) rseq)
                             $ ( fmap bestRestart  (foldRestartResults)
                               , (bestRestart fullRestartResults)

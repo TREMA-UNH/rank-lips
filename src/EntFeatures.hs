@@ -27,17 +27,9 @@ import Control.DeepSeq hiding (rwhnf)
 import Control.Parallel.Strategies
 import Data.Semigroup hiding (All, Any, option)
 import System.Random
-import System.FilePath
 
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
-import qualified Data.Text as T
 import Data.List
-import Data.Maybe
-import Data.Ord
-import Data.Bifunctor (Bifunctor(first))
-import Data.Hashable (Hashable)
-import GHC.Generics (Generic)
 
 import qualified Data.Aeson as Aeson
 import Data.List.NonEmpty as NE
@@ -58,6 +50,7 @@ import QrelInfo
 import RankLipsFeatureUtils
 import JsonRunQrels
 import RankDataType
+import Control.Monad (void)
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -282,17 +275,21 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
             RankLips.storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
             return model
 
-        strat :: Strategy [RankLips.TrainedResult f s q d]
-        strat = parBuffer 24 rseq
+        -- strat :: Strategy [RankLips.TrainedResult f s q d]
+        -- strat = parBuffer 24 rseq
     
-    (cvModels, fullModels) <- RankLips.mapCvFull savedTrainedResult
-                            $ withStrategy (parTuple2 (parTraversable rseq) rseq)
-                            $ ( fmap RankLips.bestRestart  (foldRestartResults)
-                              , (RankLips.bestRestart fullRestartResults)
-                              )
+        (cvComputation, fullComputation) = withStrategy (parTuple2 (parTraversable rseq) rseq)
+                                          $ RankLips.mapCvFull RankLips.bestRestart (foldRestartResults, fullRestartResults)
+                              
 
-    let testRanking = RankLips.computeTestRanking  $ cvModels
-    _ <- savedTrainedResult testRanking
+    if includeCv 
+    then do
+        (cvModels, fullModels) <- RankLips.mapIOCvFull savedTrainedResult (cvComputation, fullComputation)
+        let testRanking = RankLips.computeTestRanking  $ cvModels
+        void $ savedTrainedResult testRanking
+    else do
+        void $ savedTrainedResult fullComputation
+
     return ()
 
 

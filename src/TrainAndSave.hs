@@ -27,38 +27,26 @@ module TrainAndSave where
 import qualified Data.Aeson as Aeson
 import Data.Aeson (ToJSON, FromJSON, ToJSONKey, FromJSONKey)
 import qualified Data.Map.Strict as M
--- import qualified Data.Set as S
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import Data.List
 import Data.Foldable as Foldable
--- import Data.Maybe
 
-import Data.Function
-import Data.Bifunctor
 import System.Random
 import Control.Parallel.Strategies
-import Control.Concurrent.Map
 import Control.DeepSeq
-import Data.Foldable as Foldable
 import Data.Ord
-import Data.Coerce
-
 
 import SimplIR.LearningToRank
 import SimplIR.LearningToRankWrapper
 import SimplIR.FeatureSpace (FeatureSpace, FeatureVec)
 
--- import qualified SimplIR.Format.QRel as QRel
 import qualified SimplIR.Ranking as Ranking
 import SimplIR.TrainUtils
 
 import Debug.Trace as Debug
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
--- import GHC.Generics (Generic)
--- import GHC.Stack (HasCallStack)
--- import Data.Functor.Contravariant (Contravariant(contramap))
 
 import RankLipsTypes
 import Data.Maybe
@@ -187,7 +175,7 @@ dumpFullModelsAndRankings trainData restartModels metric =
                       }
         | (RestartIdx restartNo, ~(model, trainScore)) <- toList $ indexedRestarts restartModels
         , let ranking = rerankRankings' model trainData
-        , let modelDesc = "full-restart-"<> show restartNo
+        , let modelDesc = "train-restart-"<> show restartNo
         ]
     
 
@@ -273,9 +261,13 @@ storeRankingDataNoMetric outputFilePrefix ranking modelDesc = do
        $ l2rRankingToRankEntries (T.pack $ "l2r "++modelDesc)
        $ ranking
 
-mapCvFull :: (a -> IO b) -> (Folds a, a) -> IO (( Folds b), b) 
-mapCvFull f (cvModels, fullModels) = do
+mapIOCvFull :: (a -> IO b) -> (Folds a, a) -> IO (( Folds b), b) 
+mapIOCvFull f (cvModels, fullModels) = do
     (,) <$> mapM f cvModels <*> f fullModels
+
+mapCvFull :: (a -> b) -> (Folds a, a) -> (( Folds b), b) 
+mapCvFull f (cvModels, fullModels) = do
+    ( fmap f cvModels, f fullModels)
 
 
 bestRestartBy :: (a -> a -> Ordering) -> Restarts a -> a
@@ -284,7 +276,10 @@ bestRestartBy f = maximumBy f
 bestRestart :: Restarts (TrainedResult f s q d) -> TrainedResult f s q d
 bestRestart models =
     let trained = bestRestartBy (comparing trainMap) models
-    in trained { modelDesc = "fold-"<> show (foldNo trained )<> "-best"}
+    in trained { modelDesc = case (foldNo trained) of 
+                                      Just no -> "fold-"<> show (no) <> "-best"
+                                      Nothing -> "train"
+               }
 
 
 computeTestRanking :: forall f s q d. (Ord q)
