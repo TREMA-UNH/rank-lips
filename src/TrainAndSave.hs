@@ -69,9 +69,7 @@ trainWithRestarts
     -> String
     -> FeatureSpace f s
     -> TrainData f s q d
-    -- -> [(Model f s, Double)]
     -> Restarts (Model f s, Double)
-       -- ^ an infinite list of restarts
 trainWithRestarts nRestarts miniBatchParams (ConvergenceDiagParams convThreshold convMaxIter convDropIter evalCutoff _numRestarts _numFolds) gen0 metric info fspace trainData =
   let trainData' = discardUntrainable trainData
 

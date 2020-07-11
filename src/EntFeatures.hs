@@ -50,7 +50,10 @@ import QrelInfo
 import RankLipsFeatureUtils
 import JsonRunQrels
 import RankDataType
-import Control.Monad (void)
+import Control.Monad (when, void)
+import GHC.Stack (HasCallStack)
+import qualified Debug.Trace as Debug
+import qualified Data.Text as T
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -134,22 +137,25 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-resolveAssociations :: Eq q => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations :: (Eq q, Show q) => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
 resolveAssociations assocs query doc =
-    [ documentName
+    debugTr ("resolveAssociations: " <> show query <> " "<> show doc)
+    $ [ documentName
         | SimplirRun.RankingEntry {..}<- assocs
         , queryId == query
-        , partialMatch doc documentName
+        , partialMatch documentName doc
         ]
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
-            (part `M.isSubmapOf` whole) 
-            --   ||  Data.List.all 
-            --     [ case (key M.lookup whole) of 
-            --             Just vals -> Data.List.all [ v <- val] 
-            --     | (key,val) <- M.toList part
-            --     ] 
-                
+            debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
+            $ M.isSubmapOfBy equalsOrContains part whole
+        displayMap :: M.Map RankDataField RankDataValue -> String
+        displayMap m =
+            T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
+
+
+debugTr x y = Debug.trace (x <> show y) y
+
 
 
 doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
@@ -216,6 +222,9 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
                 else (featureDataList, RankLips.createModelEnvelope id)
 
+
+    putStrLn $ "featureDataList' " <> show featureDataList'
+    let
         featureDataListProjected = projectFeatureSpace projD featureDataList'     ----   d -> d'
 
         allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
@@ -225,16 +234,13 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
         modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just rankLipsVersion) defaultFeatureParamsOpt
 
-
-    putStrLn $ unlines $ fmap show $ Data.List.take 10 $ M.toList allDataList
-
-
+    putStrLn $ "Sample of allDataList \n" <> ( unlines $ fmap show $ Data.List.take 10 $ M.toList allDataList)
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
 
 
-train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d)
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d, HasCallStack)
       =>  Bool
       -> F.FeatureSpace Feat ph
       -> TrainData Feat ph q d
@@ -250,6 +256,8 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
         totalElems = getSum . foldMap ( Sum . Data.List.length ) $ allData
         totalPos = getSum . foldMap ( Sum . Data.List.length . Data.List.filter (\(_,_,rel) -> rel == Relevant)) $ allData
 
+    when (M.null allData) (fail "No features could be constructed")
+    
     putStrLn $ "Feature dimension: "++show (F.dimension $ F.featureSpace $ (\(_,a,_) -> a) $ head' $ snd $ M.elemAt 0 allData)
     putStrLn $ "Training model with (trainData) "++ show (M.size allData) ++
             " queries and "++ show totalElems ++" items total of which "++
@@ -275,12 +283,8 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
             RankLips.storeModelAndRanking outputFilePrefix experimentName modelEnvelope model
             return model
 
-        -- strat :: Strategy [RankLips.TrainedResult f s q d]
-        -- strat = parBuffer 24 rseq
-    
         (cvComputation, fullComputation) = withStrategy (parTuple2 (parTraversable rseq) rseq)
                                           $ RankLips.mapCvFull RankLips.bestRestart (foldRestartResults, fullRestartResults)
-                              
 
     if includeCv 
     then do

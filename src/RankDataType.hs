@@ -31,12 +31,14 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import Control.Parallel.Strategies (NFData)
 import qualified Data.Scientific
 import qualified Data.Vector as Vector
+import qualified Data.List
 
 
 import GHC.Generics (Generic)
 
 
 import RankLipsTypes
+import Control.Monad ((<=<))
 
 newtype RankDataField = RankDataField { unDataField :: T.Text }
     deriving stock (Eq, Ord, Show, Generic)
@@ -45,6 +47,11 @@ newtype RankDataField = RankDataField { unDataField :: T.Text }
 data RankDataValue = RankDataText {unRankDataText :: T.Text} | RankDataList {unRankDataList :: [T.Text]}
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass ( NFData)
+
+display :: RankDataValue -> T.Text
+display (RankDataText txt) = txt
+display (RankDataList lst) = T.intercalate " " lst
+
 
 newtype RankData = RankData { unData :: M.Map RankDataField RankDataValue}
     deriving stock (Eq, Ord, Show, Generic)
@@ -76,8 +83,17 @@ parseJSONValue (Aeson.Number n) =
 parseJSONValue (Aeson.Bool b) = 
     RankDataText (T.pack $ show b)
 
-parseJSONValue (Aeson.Array arr) = 
-    RankDataList $ fmap (T.pack . show) $ Vector.toList arr
+parseJSONValue (Aeson.Array arr) =
+    RankDataList $ [ case parseJSONValue elem of
+                            RankDataText txt -> txt
+                            RankDataList lst -> error $ "Lists of lists are not supported, but received "<> show arr
+                   | elem <- Vector.toList arr
+                    ]
+
+-- parseJSONValue (Aeson.Array arr) = 
+--      RankDataList <$> mapM (\x -> f =<< parseJSONValue x) (Vector.toList arr)
+--   where f (RankDataText txt) = pure txt
+--         f (RankDataList lst) = fail $ "Lists of lists are not supported"
 
 parseJSONValue (Aeson.Object obj) =
     error $ "RankData does not support nested objects, but received "<> show obj
@@ -86,12 +102,31 @@ parseJSONValue x = error $ "Can't parse nested RankData values from "<> show x
 
 
 instance ToJSON RankData where
-    toJSON (RankData map) = 
-        Aeson.toJSON $ fmap unwrapRankDataValue map
+    toJSON (RankData m) = 
+        Aeson.toJSON $ fmap unwrapRankDataValue m
       where unwrapRankDataValue (RankDataText t) = Aeson.toJSON t
             unwrapRankDataValue (RankDataList l) = Aeson.toJSON l
 
+ofListType :: RankDataValue -> Bool
+ofListType (RankDataList _) = True
+ofListType (RankDataText _) = False
 
+equalsOrContains :: RankDataValue -> RankDataValue -> Bool
+equalsOrContains (RankDataList part) (RankDataList whole) = 
+    all ( `Data.List.elem` whole) part
+
+equalsOrContains (RankDataText part) (RankDataList whole) = 
+    part `Data.List.elem` whole
+
+equalsOrContains (RankDataList part) (RankDataText whole) = 
+    case part of
+            [p] -> whole == p
+            _ -> False
+
+equalsOrContains (RankDataText part) (RankDataText whole) = 
+    part == whole
+
+    
 
     
 instance Render RankData where
