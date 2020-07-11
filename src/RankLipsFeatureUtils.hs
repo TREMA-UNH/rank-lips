@@ -23,38 +23,14 @@
 
 module RankLipsFeatureUtils where
 
-import Control.DeepSeq hiding (rwhnf)
-import Control.Parallel.Strategies
-import Data.Semigroup hiding (All, Any, option)
-import System.Random
-import System.FilePath
 
 import qualified Data.Set as S
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
-import Data.List
-import Data.Maybe
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
-import SimplIR.LearningToRank
-import SimplIR.LearningToRankWrapper
 import qualified SimplIR.FeatureSpace as F
 import SimplIR.FeatureSpace (FeatureVec)
-import SimplIR.FeatureSpace.Normalise
 
-import qualified SimplIR.Format.QRel as QRel
-
-import TrainAndSave
 import RankLipsTypes
-import Data.Bifunctor (Bifunctor(second))
-import GHC.Generics (Generic)
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Lazy.Char8 as BSL
-
-import JsonRunQrels
-import QrelInfo
-
 
 convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
 convertFeatureNames featureVariants features = 

@@ -1,40 +1,18 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE TemplateHaskell #-}
-
 
 module QrelInfo where
-
-import System.FilePath
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Data.Maybe
 
-import qualified SimplIR.Format.TrecRunFile as SimplirRun
 import SimplIR.LearningToRank
 
 import qualified SimplIR.Format.QRel as QRel
-
-import JsonRunQrels
 
 
 

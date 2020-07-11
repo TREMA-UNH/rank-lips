@@ -1,35 +1,24 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 
 module JsonRunQrels where
 
 import Data.Semigroup hiding (All, Any, option)
-import System.FilePath
+-- import System.FilePath
 
-import qualified Data.Set as S
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
-import Data.List
+-- import qualified Data.Set as S
+-- import qualified Data.Map.Strict as M
+-- import qualified Data.Text as T
+-- import Data.List
 import Data.Maybe
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun
