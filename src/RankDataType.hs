@@ -57,7 +57,7 @@ newtype RankData = RankData { unData :: M.Map RankDataField RankDataValue}
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass ( NFData)
 
-instance FromJSON RankData where
+instance Aeson.FromJSON RankData where
     parseJSON (Aeson.Object obj) = do
         let f (key, val) = do
               val' <- parseJSONValue val
