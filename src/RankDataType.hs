@@ -26,19 +26,19 @@ module RankDataType where
 import qualified Data.Map.Strict as M
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
-import Data.Aeson as Aeson
+import qualified Data.Aeson as Aeson
+import Data.Aeson.Types (Parser)
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Control.Parallel.Strategies (NFData)
 import qualified Data.Scientific
 import qualified Data.Vector as Vector
 import qualified Data.List
 
-
 import GHC.Generics (Generic)
+import Control.Monad ((<=<))
 
 
 import RankLipsTypes
-import Control.Monad ((<=<))
 
 newtype RankDataField = RankDataField { unDataField :: T.Text }
     deriving stock (Eq, Ord, Show, Generic)
@@ -57,51 +57,47 @@ newtype RankData = RankData { unData :: M.Map RankDataField RankDataValue}
     deriving stock (Eq, Ord, Show, Generic)
     deriving anyclass ( NFData)
 
-
-instance FromJSON RankData where
-    parseJSON (Aeson.Object obj) =
-        return $ RankData $ M.fromList [(RankDataField key, parseJSONValue val) | (key, val) <- HM.toList obj]
+instance Aeson.FromJSON RankData where
+    parseJSON (Aeson.Object obj) = do
+        let f (key, val) = do
+              val' <- parseJSONValue val
+              return (RankDataField key, val')
+        RankData . M.fromList <$> mapM f (HM.toList obj)
 
     parseJSON x@(Aeson.Array arr) = 
-        return $  singletonRankData (RankDataField "id") $ parseJSONValue x
+        singletonRankData (RankDataField "id") <$> parseJSONValue x
 
     parseJSON x  = 
-        return $ singletonRankData (RankDataField "id") $ parseJSONValue x
+        singletonRankData (RankDataField "id") <$> parseJSONValue x
  
-    
 
-
-parseJSONValue :: Aeson.Value -> RankDataValue 
+parseJSONValue :: Aeson.Value -> Parser RankDataValue 
 parseJSONValue (Aeson.String str) = 
-  RankDataText str
+    return $ RankDataText str
 
 parseJSONValue (Aeson.Number n) = 
-    RankDataText (T.pack $ renderScientific n)
+    return $ RankDataText (T.pack $ renderScientific n)
     where renderScientific n = 
             Data.Scientific.formatScientific Data.Scientific.Fixed (Just 0) n
 
 parseJSONValue (Aeson.Bool b) = 
-    RankDataText (T.pack $ show b)
+    return $ RankDataText (T.pack $ show b)
 
-parseJSONValue (Aeson.Array arr) =
-    RankDataList $ [ case parseJSONValue elem of
-                            RankDataText txt -> txt
-                            RankDataList lst -> error $ "Lists of lists are not supported, but received "<> show arr
-                   | elem <- Vector.toList arr
-                    ]
+parseJSONValue (Aeson.Array arr) = 
+    RankDataList <$> mapM (\x -> f =<< parseJSONValue x) (Vector.toList arr)
+  where
+    f :: RankDataValue -> Parser T.Text
+    f (RankDataText txt) = return txt
+    f (RankDataList lst) = fail $ "Lists of lists are not supported, but received "<> show arr
 
--- parseJSONValue (Aeson.Array arr) = 
---      RankDataList <$> mapM (\x -> f =<< parseJSONValue x) (Vector.toList arr)
---   where f (RankDataText txt) = pure txt
---         f (RankDataList lst) = fail $ "Lists of lists are not supported"
 
 parseJSONValue (Aeson.Object obj) =
-    error $ "RankData does not support nested objects, but received "<> show obj
+    fail $ "RankData does not support nested objects, but received "<> show obj
 
-parseJSONValue x = error $ "Can't parse nested RankData values from "<> show x
+parseJSONValue x = fail $ "Can't parse nested RankData values from "<> show x
 
 
-instance ToJSON RankData where
+instance Aeson.ToJSON RankData where
     toJSON (RankData m) = 
         Aeson.toJSON $ fmap unwrapRankDataValue m
       where unwrapRankDataValue (RankDataText t) = Aeson.toJSON t
