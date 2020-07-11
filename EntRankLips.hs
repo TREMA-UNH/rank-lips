@@ -45,7 +45,7 @@ import SimplIR.LearningToRank
 
 import RankLipsTypes
 import EntFeatures
-import JsonRunQrels
+import SimplIR.Format.JsonRunQrels
 import RankDataType
 
 import Debug.Trace  as Debug

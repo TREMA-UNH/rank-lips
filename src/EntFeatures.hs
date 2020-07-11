@@ -48,7 +48,7 @@ import qualified FeaturesAndSetup as RankLips
 import qualified TrainAndSave as RankLips
 import QrelInfo
 import RankLipsFeatureUtils
-import JsonRunQrels
+import SimplIR.Format.JsonRunQrels
 import RankDataType
 import Control.Monad (when, void)
 import GHC.Stack (HasCallStack)

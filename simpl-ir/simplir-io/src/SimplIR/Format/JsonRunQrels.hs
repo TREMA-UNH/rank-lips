@@ -10,15 +10,10 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 
-module JsonRunQrels where
+module SimplIR.Format.JsonRunQrels where
 
 import Data.Semigroup hiding (All, Any, option)
--- import System.FilePath
 
--- import qualified Data.Set as S
--- import qualified Data.Map.Strict as M
--- import qualified Data.Text as T
--- import Data.List
 import Data.Maybe
 
 import qualified SimplIR.Format.TrecRunFile as SimplirRun

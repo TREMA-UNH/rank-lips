@@ -50,7 +50,7 @@ import qualified SimplIR.FeatureSpace as F
 import RankLipsTypes
 import RankLipsCompat
 import FeaturesAndSetup
-import JsonRunQrels
+import SimplIR.Format.JsonRunQrels
 import RankLipsFeatureUtils
 
 -- import Debug.Trace  as Debug

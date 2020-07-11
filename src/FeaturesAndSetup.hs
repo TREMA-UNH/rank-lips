@@ -47,7 +47,7 @@ import RankLipsTypes
 import Data.Bifunctor (Bifunctor(second))
 import qualified Data.Aeson as Aeson
 
-import JsonRunQrels
+import SimplIR.Format.JsonRunQrels
 import QrelInfo
 import RankLipsFeatureUtils
 import GHC.Stack (HasCallStack)
