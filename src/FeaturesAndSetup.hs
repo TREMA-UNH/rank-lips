@@ -50,6 +50,7 @@ import qualified Data.Aeson as Aeson
 import JsonRunQrels
 import QrelInfo
 import RankLipsFeatureUtils
+import GHC.Stack (HasCallStack)
 
 
 
@@ -184,7 +185,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
-train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d)
+train :: forall ph q d . (Ord q, Ord d, Show q, Show d, NFData q, NFData d, Render q, Render d, HasCallStack)
       =>  Bool
       -> F.FeatureSpace Feat ph
       -> TrainData Feat ph q d
@@ -214,8 +215,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
     putStrLn $ "Training Data = \n" ++ intercalate "\n" (take 10 $ displayTrainData $ force allData)
     gen0 <- newStdGen  -- needed by learning to rank
-    -- trainAndStore includeCv miniBatchParams convergenceDiagParams    gen0 allData fspace metric outputFilePrefix "" modelEnvelope
-    -- trainAndStore includeCv miniBatchParams convDiagParams gen0 trainData fspace metric outputFilePrefix experimentName modelEnvelope = do
+    -- trainAndStore 
 
     let experimentName = ""
 
