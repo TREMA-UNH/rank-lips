@@ -4,8 +4,8 @@ allow-newer:
     profunctors
 
 packages:
-    simpl-ir/*/*.cabal
-    simpl-ir/vendor/*/*.cabal
+    simplir/*/*.cabal
+    simplir/vendor/*/*.cabal
     ./
 
 debug-info: True
