@@ -1,3 +1,3 @@
-[submodule "simpl-ir"]
-	path = simpl-ir
+[submodule "simplir"]
+	path = simplir
 	url = https://git@git.smart-cactus.org/ben/simpl-ir
