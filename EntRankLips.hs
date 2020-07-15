@@ -97,6 +97,7 @@ convergenceParamParser =
                              , convergenceFolds=defFolds
                              } = defaultConvergenceParams
 
+
 featureParamsParser :: Parser FeatureParams
 featureParamsParser = FeatureParams 
     <$> option str (long "feature-runs-directory" <> short 'd' <> help "directory containing run files for features" <> metavar "DIR")
@@ -105,7 +106,11 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
-    <*> flag False True  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
+    <*> (flag' JsonLRunFormat  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
+        <|> flag' JsonLGzRunFormat  (long "jsonl.gz" <> help "Load data from jsonl.gz file instead of trec_eval run file")   
+        <|> flag' TrecEvalRunFormat  (long "trec-eval" <> help "Load data from trec_eval compatible run file")   
+        <|> flag' TrecEvalRunFormat (help "Default: Load data from trec_eval compatible run file")
+      )
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 

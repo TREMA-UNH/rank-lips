@@ -154,10 +154,14 @@ data SomeRankLipsModel f where
     SomeRankLipsModel :: RankLipsModel f s -> SomeRankLipsModel f
 
 
+data RunFormat = TrecEvalRunFormat | JsonLRunFormat | JsonLGzRunFormat
+  deriving (Eq, Show, Read, Enum, Bounded)
+
+
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
                                    , features :: [FilePath]
                                    , featureVariants :: [FeatureVariant]
-                                   , featuresFromJsonL :: Bool
+                                   , featuresRunFormat :: RunFormat
                                    }
     deriving (Eq, Show)
 

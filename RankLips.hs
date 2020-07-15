@@ -107,7 +107,11 @@ featureParamsParser = FeatureParams
             <> help ("Enable feature variant (default all), choices: " ++(show [minBound @FeatureVariant .. maxBound]) ))) 
         <|> pure  [minBound @FeatureVariant .. maxBound]    
         )
-    <*> flag True False  (long "jsonl-run" <> help "Load data from jsonl file instead of trec_eval run file")   
+    <*> (flag' JsonLRunFormat  (long "jsonl-run" <> help "Load data from jsonl file instead of trec_eval run file")   
+        <|> flag' JsonLGzRunFormat  (long "jsonl.gz-run" <> help "Load data from jsonl.gz file instead of trec_eval run file")   
+        <|> flag' TrecEvalRunFormat  (long "trec-eval-run" <> help "Load data from trec_eval compatible run file")   
+        <|> flag' TrecEvalRunFormat (help "Default: Load data from trec_eval compatible run file")
+      )
 
 defaultFeatureParamsParser :: Parser DefaultFeatureParams
 defaultFeatureParamsParser = 

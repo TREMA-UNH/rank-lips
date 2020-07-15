@@ -90,7 +90,7 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
         FeatureSet {featureNames=_featureNames, produceFeatures=produceFeatures}
            = featureSet featureParams
 
-    runFiles <- if featuresFromJsonL
+    runFiles <- if featuresRunFormat == TrecEvalRunFormat
                     then loadRunFiles convQ convD featureRunsDirectory features
                     else loadJsonLRunFiles featureRunsDirectory features
 
@@ -140,7 +140,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
-    runFiles <- if featuresFromJsonL
+    runFiles <- if  featuresRunFormat == TrecEvalRunFormat
                     then loadRunFiles convQ convD featureRunsDirectory features
                     else loadJsonLRunFiles featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
