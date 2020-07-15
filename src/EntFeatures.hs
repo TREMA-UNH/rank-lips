@@ -147,8 +147,8 @@ resolveAssociations assocs query doc =
         ]
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
-            debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
-            $ M.isSubmapOfBy equalsOrContains part whole
+            -- debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
+            M.isSubmapOfBy equalsOrContains part whole
         displayMap :: M.Map RankDataField RankDataValue -> String
         displayMap m =
             T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
