@@ -1,9 +1,9 @@
 # For use with nix-shell
-{ nixpkgs ? (import ./trec-car-tools-haskell/simplir/nixpkgs.nix {}) }:
+{ nixpkgs ? (import ./simplir/nixpkgs.nix {}) }:
 
 with nixpkgs;
 let
-  trec-eval = callPackage ./trec-car-tools-haskell/simplir/trec-eval.nix {};
+  trec-eval = callPackage ./simplir/trec-eval.nix {};
 in stdenv.mkDerivation {
   name = "mediawiki-annotate-develop";
   buildInputs = [
