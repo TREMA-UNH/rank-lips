@@ -154,7 +154,9 @@ resolveAssociations assocs =
                         ]
     in \query doc ->
         [ documentName
-            | rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
+            | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
+                      $ query `M.lookup` assocIdx
+            -- rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
             , documentName <-  rds
             , partialMatch documentName doc
         ]
