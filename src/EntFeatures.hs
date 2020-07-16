@@ -153,13 +153,18 @@ resolveAssociations assocs =
                         -- , partialMatch documentName doc
                         ]
     in \query doc ->
-        [ documentName
-            | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
-                      $ query `M.lookup` assocIdx
-            -- rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
-            , documentName <-  rds
-            , partialMatch documentName doc
-        ]
+        let res = 
+               [ documentName
+                    | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
+                            $ query `M.lookup` assocIdx
+                    -- rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
+                    , documentName <-  rds
+                    , partialMatch documentName doc
+                ]
+        in if (null res)
+               then Debug.trace ("No assocs for query "<> show query<> ", document "<> show doc) $ res        
+               else res
+
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
             -- debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
