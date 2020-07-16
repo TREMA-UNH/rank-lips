@@ -54,6 +54,7 @@ import Control.Monad (when, void)
 import GHC.Stack (HasCallStack)
 import qualified Debug.Trace as Debug
 import qualified Data.Text as T
+import Data.Maybe
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -77,25 +78,31 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                 -- | project out fields in features using associations
                 projectFeatures ::  [(q, M.Map d [(Feat,Double)])] -> [(q, M.Map d [(Feat,Double)])]
                 projectFeatures plainFeats = 
-                   [ ( queryId, 
-                        M.fromListWith (<>)
-                        [( documentName' 
-                         , scale normalizationFactor featList
-                        )]
-                      )
-                    | (queryId, featMap) <- plainFeats
-                    , (documentName, featList) <- M.toList featMap 
-                    , let assocDocumentNames = resolveAssocs queryId documentName   -- normalization by participating objects
-                    , let normalizationFactor = 1.0 / (realToFrac $ Data.List.length assocDocumentNames)
-                    , documentName' <- assocDocumentNames
-                    ]
+                    M.toList                  --- <-- build map
+                    $ M.mapWithKey proj 
+                    $ M.fromListWith (M.union) plainFeats
+                  where proj queryId featMap =  
+                                M.fromListWith (<>)   --- <-- build map
+                                $ withStrategy (parBuffer 20 r0)
+                                $  [   
+                                        ( documentName' 
+                                        , scale normalizationFactor featList
+                                        )
+                                    | (documentName, featList) <- M.toList featMap 
+                                    , let assocDocumentNames = resolveAssocs queryId documentName   --  <-- sloooow?
+                                    , let normalizationFactor = 1.0 / (realToFrac $ Data.List.length assocDocumentNames)
+                                    , documentName' <- assocDocumentNames
+                                    ]
+                                -- Remarks: 
+                                --    * documentName is the name associated with a feature from a runfile (e.g. neighbor/paragraph combination)
+                                --    * documentName' is the name of the ranking we seek to produce (e.g. entity)
 
 
                 -- | convert run files into list of features (keyed on q and d)
                 producePlainFeatures :: [(FilePath, [SimplirRun.RankingEntry' q d])]  -> [(q, M.Map d [(Feat,Double)])]
                 producePlainFeatures runData = 
                            [ ( queryId, 
-                                M.fromListWith (<>)
+                                M.fromListWith (<>)   -- <-- build map
                                 [( documentName 
                                 , (internFeatures fspace 
                                   $ produceFeatures fname entry
@@ -137,13 +144,19 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-resolveAssociations :: (Eq q, Show q) => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
-resolveAssociations assocs query doc =
-    -- debugTr ("resolveAssociations: " <> show query <> " "<> show doc)
-    [ documentName
-        | SimplirRun.RankingEntry {..}<- assocs
-        , queryId == query
-        , partialMatch documentName doc
+resolveAssociations :: (Eq q, Show q, Ord q) => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations assocs =
+    let assocIdx = M.fromListWith (<>)
+                 $  [ (queryId, [documentName])
+                        | SimplirRun.RankingEntry {..}<- assocs
+                        -- , queryId == query
+                        -- , partialMatch documentName doc
+                        ]
+    in \query doc ->
+        [ documentName
+            | rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
+            , documentName <-  rds
+            , partialMatch documentName doc
         ]
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
@@ -152,6 +165,9 @@ resolveAssociations assocs query doc =
         displayMap :: M.Map RankDataField RankDataValue -> String
         displayMap m =
             T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
+    
+    
+
 
 
 debugTr x y = Debug.trace (x <> show y) y
