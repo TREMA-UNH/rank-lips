@@ -122,7 +122,9 @@ equalsOrContains (RankDataList part) (RankDataText whole) =
 equalsOrContains (RankDataText part) (RankDataText whole) = 
     part == whole
 
-    
+rankDataLookup :: RankDataField -> RankData -> Maybe RankData
+rankDataLookup field (RankData m) =
+    fmap (\v -> RankData $ M.singleton field v ) $ field `M.lookup` m 
 
     
 instance Render RankData where

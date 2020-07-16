@@ -55,6 +55,7 @@ import GHC.Stack (HasCallStack)
 import qualified Debug.Trace as Debug
 import qualified Data.Text as T
 import Data.Maybe
+import qualified Data.Set as S
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -144,37 +145,35 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
-resolveAssociations :: (Eq q, Show q, Ord q) => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
-resolveAssociations assocs =
+resolveAssociations :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations predictFields assocs =
     let assocIdx = M.fromListWith (<>)
                  $  [ (queryId, [documentName])
                         | SimplirRun.RankingEntry {..}<- assocs
-                        -- , queryId == query
-                        -- , partialMatch documentName doc
                         ]
     in \query doc ->
-        let res = 
-               [ documentName
+        let res =   [ predictProj documentName
                     | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
                             $ query `M.lookup` assocIdx
-                    -- rds <- Data.Maybe.maybeToList $ query `M.lookup` assocIdx
                     , documentName <-  rds
-                    , partialMatch documentName doc
-                ]
+                    , partialMatch doc documentName
+                    ]
         in if (null res)
                then Debug.trace ("No assocs for query "<> show query<> ", document "<> show doc) $ res        
                else Debug.trace ("Found Assoc query "<> show query<> ", document "<> show doc) $ res
 
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
-            -- debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
-            M.isSubmapOfBy equalsOrContains part whole
+            debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
+            $ M.isSubmapOfBy equalsOrContains part whole
         displayMap :: M.Map RankDataField RankDataValue -> String
         displayMap m =
             T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
     
     
-
+        predictProj :: RankData -> RankData
+        predictProj rd =
+            modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` predictFields) m) rd
 
 
 debugTr x y = Debug.trace (x <> show y) y
@@ -182,8 +181,7 @@ debugTr x y = Debug.trace (x <> show y) y
 
 
 doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
-            => (RankData -> RankData) 
-            -> FeatureParams
+            => FeatureParams
             -> FilePath
             -> FilePath 
             -> FilePath 
@@ -194,10 +192,11 @@ doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
             -> Bool
             -> ConvergenceDiagParams
             -> Maybe DefaultFeatureParams
-            -> Maybe RankDataField
+            -> S.Set RankDataField
             -> String
             -> IO ()
-doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt trainFieldOpt rankLipsVersion  = do
+doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimentName qrelFile miniBatchParams 
+           includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt predictionFields rankLipsVersion  = do
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
@@ -210,17 +209,17 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
     assocs <- readJsonLRunFile assocsFile
 
 
-    let projectGroundTruth = case trainFieldOpt of
-                                Nothing -> id
-                                Just field -> fmap (\entry@(QRel.Entry {..}) -> entry { QRel.documentName = projectRankData field documentName }) 
-
+    -- let projectGroundTruth = case trainFieldOpt of
+    --                             Nothing -> id
+    --                             Just field -> fmap (\entry@(QRel.Entry {..}) -> entry { QRel.documentName = projectRankData field documentName }) 
+    let projectGroundTruth = id
     QrelInfo{..} <- loadQrelInfo . projectGroundTruth <$> readJsonLQrelFile qrelFile
                     
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations assocs) produceFeatures runFiles
+        featureDataMap = runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations predictionFields assocs) produceFeatures runFiles
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
@@ -248,10 +247,10 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
     putStrLn $ "featureDataList' " <> show featureDataList'
     let
-        featureDataListProjected = projectFeatureSpace projD featureDataList'     ----   d -> d'
+        -- featureDataListProjected = projectFeatureSpace projD featureDataList'     ----   d -> d'
 
         allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
-        allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataListProjected
+        allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList'
 
         allDataList = allDataListRaw
 

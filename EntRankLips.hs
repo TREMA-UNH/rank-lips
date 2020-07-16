@@ -187,11 +187,13 @@ opts = subparser
           <*> convergenceParamParser
           <*> defaultFeatureParamsParser
           <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
-          <*> many (option ( RankDataField . T.pack <$> str) (short 'P' <> long "project" <> metavar "FIELD" <> help "json fields to project out (i.e., marginalize over)" ))
-          <*> optional (option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" ))
+          <*> some (option ( RankDataField . T.pack <$> str) (short 'P' <> long "predict" <> metavar "FIELD" <> help "json field predict" ))
+          -- <*> optional (option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" ))
       where
-        f :: FeatureParams -> FilePath ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> [RankDataField] -> Maybe RankDataField ->  IO()
-        f fparams@FeatureParams{..} assocsFile outputDir outputPrefix qrelFile experimentName miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads projectionFields trainFieldOpt = do
+        f :: FeatureParams -> FilePath ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams 
+          -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> [RankDataField] -> IO()
+        f fparams@FeatureParams{..} assocsFile outputDir outputPrefix qrelFile experimentName miniBatchParams 
+          includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads predictField = do
             setNumCapabilities numThreads
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
@@ -200,14 +202,14 @@ opts = subparser
                                 fs -> fs 
                 outputFilePrefix = outputDir </> outputPrefix
 
-                projectFieldSet = S.fromList $ projectionFields
+                predictFieldSet = S.fromList $ predictField
 
-                dProj :: RankData -> RankData
-                dProj rd =
-                    modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` projectFieldSet) m) rd
+                -- dProj :: RankData -> RankData
+                -- dProj rd =
+                    -- modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` predictFieldSet) m) rd
 
 
-            doEntTrain @T.Text dProj (fparams{features=features'}) assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) trainFieldOpt getRankLipsVersion
+            doEntTrain @T.Text (fparams{features=features'}) assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) predictFieldSet getRankLipsVersion
             
     doConvQrels' =
         f <$> option str (long "output" <> short 'o' <> help "location of new qrels file" <> metavar "FILE")     
