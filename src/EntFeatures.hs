@@ -139,8 +139,8 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
 
 resolveAssociations :: (Eq q, Show q) => [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
 resolveAssociations assocs query doc =
-    debugTr ("resolveAssociations: " <> show query <> " "<> show doc)
-    $ [ documentName
+    -- debugTr ("resolveAssociations: " <> show query <> " "<> show doc)
+    [ documentName
         | SimplirRun.RankingEntry {..}<- assocs
         , queryId == query
         , partialMatch documentName doc
@@ -181,7 +181,7 @@ doEntTrain projD featureParams@FeatureParams{..} assocsFile outputFilePrefix exp
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
-    runFiles <- RankLips.loadJsonLRunFiles featureRunsDirectory features
+    runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     assocs <- readJsonLRunFile assocsFile

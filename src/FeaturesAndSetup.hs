@@ -92,7 +92,7 @@ doPredict convQ convD featureParams@FeatureParams{..} outputFilePrefix defaultFe
 
     runFiles <- if featuresRunFormat == TrecEvalRunFormat
                     then loadRunFiles convQ convD featureRunsDirectory features
-                    else loadJsonLRunFiles featureRunsDirectory features
+                    else loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
 
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
@@ -142,7 +142,7 @@ doTrain convQ convD featureParams@FeatureParams{..} outputFilePrefix experimentN
 
     runFiles <- if  featuresRunFormat == TrecEvalRunFormat
                     then loadRunFiles convQ convD featureRunsDirectory features
-                    else loadJsonLRunFiles featureRunsDirectory features
+                    else loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
     QrelInfo{..} <- loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
@@ -256,10 +256,17 @@ loadRunFiles convQ convD prefix inputRuns = do
                                     , .. }
 loadJsonLRunFiles :: forall q d 
                   . (Aeson.FromJSON q, Aeson.FromJSON d)
-                  => FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
-loadJsonLRunFiles prefix inputRuns = do
+                  => RunFormat -> FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
+loadJsonLRunFiles JsonLRunFormat prefix inputRuns = do
     mapM (\fname -> (fname,)
         <$> readJsonLRunFile (prefix </> fname)) inputRuns    
+
+loadJsonLRunFiles JsonLGzRunFormat prefix inputRuns = do
+    mapM (\fname -> (fname,)
+        <$> readGzJsonLRunFile (prefix </> fname)) inputRuns    
+
+loadJsonLRunFiles TrecEvalRunFormat prefix inputRuns = do
+    fail $ "loadJsonLRunFiles TrecEvalRunFormat not supported."
 
 
 augmentWithQrelsList_ ::  forall ph q d

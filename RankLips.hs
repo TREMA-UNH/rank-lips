@@ -256,6 +256,7 @@ opts = subparser
              <*> (flag' OldRunToJsonLMode (long "old-run-features-to-jsonl")
                  <|> flag' JsonLRunToTrecEval (long "jsonl-run-to-trec-eval")
                  )
+
              
 data ConvertFeatureMode = OldRunToJsonLMode | JsonLRunToTrecEval
     deriving (Eq, Show)
@@ -274,14 +275,14 @@ convertOldModel oldModelFile newModelFile = do
     BSL.writeFile newModelFile $ Aeson.encode $ serializedRankLipsModel
 
 
-doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> ConvertFeatureMode-> IO()
+doConvertFeatures :: FilePath ->  [FilePath] -> FilePath -> ConvertFeatureMode -> IO()
 doConvertFeatures oldDir filenames  newDir OldRunToJsonLMode = do
     runs <- loadRunFiles id id oldDir filenames
     forM_ runs (\(fname, content) ->
             writeJsonLRunFile (newDir</>fname) content
         ) 
-doConvertFeatures oldDir filenames  newDir JsonLRunToTrecEval = do
-    runs <- loadJsonLRunFiles oldDir filenames
+doConvertFeatures oldDir filenames newDir JsonLRunToTrecEval = do
+    runs <- loadJsonLRunFiles JsonLRunFormat oldDir filenames
     forM_ runs (\(fname, content) ->
             SimplirRun.writeRunFile (newDir</>fname) content
         ) 
