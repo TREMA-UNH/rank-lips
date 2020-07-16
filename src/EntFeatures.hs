@@ -163,7 +163,7 @@ resolveAssociations assocs =
                 ]
         in if (null res)
                then Debug.trace ("No assocs for query "<> show query<> ", document "<> show doc) $ res        
-               else res
+               else Debug.trace ("Found Assoc query "<> show query<> ", document "<> show doc) $ res
 
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
