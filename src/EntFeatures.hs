@@ -273,7 +273,9 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
         totalPos = getSum . foldMap ( Sum . Data.List.length . Data.List.filter (\(_,_,rel) -> rel == Relevant)) $ allData
 
     when (M.null allData) (fail "No features could be constructed")
-    
+    when (null $ snd $ M.elemAt 0 allData) (fail "First query does not have any features")
+
+
     putStrLn $ "Feature dimension: "++show (F.dimension $ F.featureSpace $ (\(_,a,_) -> a) $ head' $ snd $ M.elemAt 0 allData)
     putStrLn $ "Training model with (trainData) "++ show (M.size allData) ++
             " queries and "++ show totalElems ++" items total of which "++
