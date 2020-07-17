@@ -160,12 +160,13 @@ resolveAssociations predictFields assocs =
                     ]
         in if (null res)
                then Debug.trace ("No assocs for query "<> show query<> ", document "<> show doc) $ res        
-               else Debug.trace ("Found Assoc query "<> show query<> ", document "<> show doc) $ res
+               else res
+            --    else Debug.trace ("Found Assoc query "<> show query<> ", document "<> show doc) $ res
 
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
-            debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole)
-            $ M.isSubmapOfBy equalsOrContains part whole
+            -- debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole) $
+            M.isSubmapOfBy equalsOrContains part whole
         displayMap :: M.Map RankDataField RankDataValue -> String
         displayMap m =
             T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
