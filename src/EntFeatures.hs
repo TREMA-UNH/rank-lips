@@ -27,6 +27,8 @@ import Control.DeepSeq hiding (rwhnf)
 import Control.Parallel.Strategies
 import Data.Semigroup hiding (All, Any, option)
 import System.Random
+import System.IO.Unsafe
+import Data.IORef
 
 import qualified Data.Map.Strict as M
 import Data.List
@@ -145,13 +147,26 @@ createEntDefaultFeatureVec fspace defaultFeatureParamsOpt =
             x -> error $ "Default feature mode " <> show x <> " is not implemented. Supported: DefaultFeatureSingleValue, DefaultFeatureVariantValue, or DefaultFeatureValue."
 
 
+memoize :: Ord k => (k -> v) -> (k -> v)
+memoize f =
+    unsafePerformIO $ do
+        ref <- newIORef mempty
+        return $ \x -> unsafePerformIO $ do
+                            store <- readIORef ref
+                            case x `M.lookup` store of
+                                Just y -> return y
+                                Nothing -> do 
+                                    let !y = f x
+                                    modifyIORef' ref (M.insert x y)  -- we read the ref again, because f might take a while to compute 
+                                    return y
+
 resolveAssociations :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
 resolveAssociations predictFields assocs =
     let assocIdx = M.fromListWith (<>)
                  $  [ (queryId, [documentName])
                         | SimplirRun.RankingEntry {..}<- assocs
                         ]
-    in \query doc ->
+    in memoize $ \query doc ->
         let res =   [ predictProj documentName
                     | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
                             $ query `M.lookup` assocIdx
