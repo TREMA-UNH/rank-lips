@@ -174,7 +174,7 @@ resolveAssociations predictFields assocs =
     
         predictProj :: RankData -> RankData
         predictProj rd =
-            modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` predictFields) m) rd
+            modRankData (\m -> M.filterWithKey (\k v -> k `S.member` predictFields) m) rd
 
 
 debugTr x y = Debug.trace (x <> show y) y
