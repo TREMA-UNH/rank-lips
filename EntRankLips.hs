@@ -19,6 +19,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 
 module Main where
@@ -48,7 +49,12 @@ import EntFeatures
 import SimplIR.Format.JsonRunQrels
 import RankDataType
 
+
 import Debug.Trace  as Debug
+import qualified FeaturesAndSetup as RankLips
+
+import qualified TrainAndSave as RankLips
+import qualified Data.Aeson as Aeson
 
 
 
@@ -161,6 +167,7 @@ opts = subparser
     <>  cmd "conv-qrels"  doConvQrels'
     <>  cmd "conv-runs"   doConvRuns'
     <>  cmd "export-runs" doExportRuns'
+    <>  cmd "rank-aggregation" doRankAggregation'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -188,7 +195,6 @@ opts = subparser
           <*> defaultFeatureParamsParser
           <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
           <*> some (option ( RankDataField . T.pack <$> str) (short 'P' <> long "predict" <> metavar "FIELD" <> help "json field predict" ))
-          -- <*> optional (option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" ))
       where
         f :: FeatureParams -> FilePath ->  FilePath -> FilePath -> FilePath -> String -> MiniBatchParams 
           -> Bool -> Bool -> Bool -> ConvergenceDiagParams-> DefaultFeatureParams -> Int -> [RankDataField] -> IO()
@@ -203,12 +209,6 @@ opts = subparser
                 outputFilePrefix = outputDir </> outputPrefix
 
                 predictFieldSet = S.fromList $ predictField
-
-                -- dProj :: RankData -> RankData
-                -- dProj rd =
-                    -- modRankData (\m -> M.filterWithKey (\k v -> not $ k `S.member` predictFieldSet) m) rd
-
-
             doEntTrain @T.Text (fparams{features=features'}) assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) predictFieldSet getRankLipsVersion
             
     doConvQrels' =
@@ -255,6 +255,54 @@ opts = subparser
             unwrap (RankDataText t) = t
             unwrap (RankDataList l) = T.intercalate "," l
 
+    doRankAggregation' =
+        f <$> featureParamsParser
+          -- <*> optional (option str (long "assocs" <> short 'a' <> metavar "JSONL" <> help "json file with associations between rank data fields"))
+          <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
+          <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
+          <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
+          <*> some (option ( RankDataField . T.pack <$> str) (short 'P' <> long "predict" <> metavar "FIELD" <> help "json field predict" ))
+      where
+        f :: --forall q d . (Aeson.ToJSON q, Aeson.FromJSON q, Aeson.ToJSON d, Aeson.FromJSON d, Ord q, Ord d, Eq q, Eq d)  =>
+          FeatureParams -> FilePath -> FilePath -> Int -> [RankDataField] -> IO()
+        f featureParams@FeatureParams{..} outputDir outputPrefix numThreads predictField = do
+            setNumCapabilities numThreads
+            dirFeatureFiles <- listDirectory featureRunsDirectory
+            createDirectoryIfMissing True outputDir
+            let features' = case features of
+                                [] -> dirFeatureFiles
+                                fs -> fs 
+                outputFilePrefix = outputDir </> outputPrefix
+
+                predictFieldSet = S.fromList $ predictField
+
+                -- FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
+                    -- = featureSet featureParams        
+            runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
+            putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
+
+            let runData :: [(FilePath, [SimplirRun.RankingEntry' T.Text RankData])]             
+                runData = runFiles
+                aggrFeats = aggrFeatures runData
+                aggrRun = [  SimplirRun.RankingEntry { queryId = query
+                                                     , documentName = doc
+                                                     , documentScore = score
+                                                     , documentRank = 1
+                                                     , methodName = "aggr"
+                                                     }
+                          | (query, map) <- M.toList aggrFeats
+                          , (doc, score) <- M.toList map
+                          ]
+            writeJsonLRunFile (outputDir <> outputPrefix <.> "aggr"<.>"jsonl") $ aggrRun
+
+        aggrFeatures :: forall q d . (Ord q, Ord d) =>  [(FilePath, [SimplirRun.RankingEntry' q d])]  -> M.Map q (M.Map d Double)
+        aggrFeatures runData = 
+                    M.fromListWith (M.unionWith (+))
+                    $ [ ( queryId, M.singleton documentName  ( 1.0 / (realToFrac documentRank)) )
+                      | (fname:: FilePath, rankingEntries:: [SimplirRun.RankingEntry' q d]) <- runData
+                      , (entry@(SimplirRun.RankingEntry {..}) :: SimplirRun.RankingEntry' q d) <- rankingEntries
+                      ]
+    
 
 debugTr :: (x -> String) ->  x -> x
 debugTr msg x = Debug.trace (msg x) $ x
