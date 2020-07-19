@@ -55,6 +55,8 @@ import qualified FeaturesAndSetup as RankLips
 
 import qualified TrainAndSave as RankLips
 import qualified Data.Aeson as Aeson
+import qualified Data.List as L
+import Data.Ord (comparing, Down(Down))
 
 
 
@@ -278,7 +280,7 @@ opts = subparser
 
                 -- FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
                     -- = featureSet featureParams        
-            runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
+            runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features'
             putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
             let runData :: [(FilePath, [SimplirRun.RankingEntry' T.Text RankData])]             
@@ -287,13 +289,14 @@ opts = subparser
                 aggrRun = [  SimplirRun.RankingEntry { queryId = query
                                                      , documentName = doc
                                                      , documentScore = score
-                                                     , documentRank = 1
+                                                     , documentRank = rank
                                                      , methodName = "aggr"
                                                      }
                           | (query, map) <- M.toList aggrFeats
-                          , (doc, score) <- M.toList map
+                          , ((rank:: SimplirRun.Rank), (doc, score)) <- zip [1 ..] $ L.sortBy (comparing $ Down . snd) $ M.toList map
                           ]
-            writeJsonLRunFile (outputDir <> outputPrefix <.> "aggr"<.>"jsonl") $ aggrRun
+            putStrLn "writing results"              
+            writeJsonLRunFile (outputDir </> outputPrefix <.> "aggr"<.>"jsonl") $ aggrRun
 
         aggrFeatures :: forall q d . (Ord q, Ord d) =>  [(FilePath, [SimplirRun.RankingEntry' q d])]  -> M.Map q (M.Map d Double)
         aggrFeatures runData = 
