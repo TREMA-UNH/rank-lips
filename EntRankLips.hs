@@ -203,6 +203,9 @@ opts = subparser
         f fparams@FeatureParams{..} assocsFile outputDir outputPrefix qrelFile experimentName miniBatchParams 
           includeCv useZscore saveHeldoutQueriesInModel convergenceParams defaultFeatureParams numThreads predictField = do
             setNumCapabilities numThreads
+
+            putStrLn "ent-rank-lips train"
+
             dirFeatureFiles <- listDirectory featureRunsDirectory
             createDirectoryIfMissing True outputDir
             let features' = case features of

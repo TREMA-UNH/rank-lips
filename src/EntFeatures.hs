@@ -215,6 +215,8 @@ doEntTrain :: forall q . (Ord q, Show q, NFData q,  Aeson.FromJSON q, Render q)
             -> IO ()
 doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimentName qrelFile miniBatchParams 
            includeCv useZScore saveHeldoutQueriesInModel convergenceParams defaultFeatureParamsOpt predictionFields rankLipsVersion  = do
+    putStrLn "ent-rank-lips making feature sets...."
+    
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
