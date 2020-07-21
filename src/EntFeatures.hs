@@ -183,7 +183,12 @@ resolveAssociations predictFields assocs =
   where partialMatch :: RankData -> RankData -> Bool
         partialMatch (RankData part) (RankData whole) =
             -- debugTr ("partialMatch part: "<> displayMap part <> "\n  whole "<> displayMap whole) $
-            M.isSubmapOfBy equalsOrContains part whole
+            M.isSubmapOfBy equalsOrContains ( M.filter notNullList part) 
+            $ M.filter notNullList whole
+        notNullList :: RankDataValue -> Bool
+        notNullList (RankDataText _) = True
+        notNullList (RankDataList lst) = not $ null lst
+
         displayMap :: M.Map RankDataField RankDataValue -> String
         displayMap m =
             T.unpack $ T.unlines [ "("<> k <> ": "<> display v <> ")"| (RankDataField k,v) <- M.toList m]
