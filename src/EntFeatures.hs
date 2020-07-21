@@ -223,14 +223,25 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
     runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
     putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
 
-    assocs <- readJsonLRunFile assocsFile
+    assocs <- if ("jsonl" `isSuffixOf` assocsFile)  
+                    then readJsonLRunFile assocsFile
+                    else if ("jsonl.gz" `isSuffixOf` assocsFile)  
+                        then readGzJsonLRunFile assocsFile
+                        else error $ "First convert file to jsonl or jsonl.gz "<> assocsFile
+
 
 
     -- let projectGroundTruth = case trainFieldOpt of
     --                             Nothing -> id
     --                             Just field -> fmap (\entry@(QRel.Entry {..}) -> entry { QRel.documentName = projectRankData field documentName }) 
     let projectGroundTruth = id
-    QrelInfo{..} <- loadQrelInfo . projectGroundTruth <$> readJsonLQrelFile qrelFile
+    QrelInfo{..} <- loadQrelInfo . projectGroundTruth 
+                 -- <$> readJsonLQrelFile qrelFile
+                 <$>  if ("jsonl" `isSuffixOf` qrelFile)  
+                        then readJsonLQrelFile qrelFile
+                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
+                            then readGzJsonLQrelFile qrelFile
+                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile
                     
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
 
