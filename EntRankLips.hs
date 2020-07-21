@@ -248,10 +248,18 @@ opts = subparser
         f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
           <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
           <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "run-field" <> metavar "FIELD" <> help "json field to expose in run file" )
+          <*> (flag' JsonLRunFormat  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
+              <|> flag' JsonLGzRunFormat  (long "jsonl.gz" <> help "Load data from jsonl.gz file instead of trec_eval run file")   
+              <|> flag' TrecEvalRunFormat  (long "trec-eval" <> help "Load data from trec_eval compatible run file")   
+              <|> flag' JsonLRunFormat (help "Default: Load data from jsonl compatible run file")
+            )
       where
-        f :: FilePath -> FilePath -> RankDataField ->  IO()
-        f outputFile runFile runField = do
-            runData <- readJsonLRunFile runFile
+        f :: FilePath -> FilePath -> RankDataField -> RunFormat ->  IO()
+        f outputFile runFile runField runFormat = do
+            runData <- case runFormat of
+                        JsonLRunFormat -> readJsonLRunFile runFile
+                        JsonLGzRunFormat -> readGzJsonLRunFile runFile
+                        _ -> fail $ "Convert file to jsonl or jsonl.gz format: "<> runFile
             writeTrecEvalRunFile outputFile runData id convD
           where  
             convD :: RankData -> SimplirRun.DocumentName
