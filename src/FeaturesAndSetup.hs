@@ -51,6 +51,7 @@ import SimplIR.Format.JsonRunQrels
 import QrelInfo
 import RankLipsFeatureUtils
 import GHC.Stack (HasCallStack)
+import Control.Concurrent.Map (mapConcurrentlyL)
 
 
 
@@ -258,12 +259,14 @@ loadJsonLRunFiles :: forall q d
                   . (Aeson.FromJSON q, Aeson.FromJSON d)
                   => RunFormat -> FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
 loadJsonLRunFiles JsonLRunFormat prefix inputRuns = do
-    mapM (\fname -> (fname,)
-        <$> readJsonLRunFile (prefix </> fname)) inputRuns    
+    mapConcurrentlyL 20 ((\fname -> (fname,)
+                            <$> readJsonLRunFile (prefix </> fname))
+                        ) inputRuns    
 
 loadJsonLRunFiles JsonLGzRunFormat prefix inputRuns = do
-    mapM (\fname -> (fname,)
-        <$> readGzJsonLRunFile (prefix </> fname)) inputRuns    
+    mapConcurrentlyL 20 ( (\fname -> (fname,)
+                        <$> readGzJsonLRunFile (prefix </> fname))
+                        ) inputRuns    
 
 loadJsonLRunFiles TrecEvalRunFormat prefix inputRuns = do
     fail $ "loadJsonLRunFiles TrecEvalRunFormat not supported."

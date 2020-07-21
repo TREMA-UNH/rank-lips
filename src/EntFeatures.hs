@@ -58,6 +58,7 @@ import qualified Debug.Trace as Debug
 import qualified Data.Text as T
 import Data.Maybe
 import qualified Data.Set as S
+import Control.Concurrent.Map (mapConcurrentlyL)
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -217,11 +218,13 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
          = featureSet featureParams
 
+    putStrLn "ent-rank-lips starting run/assocs/qrel loading..."
 
     F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
 
     runFiles <- RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
-    putStrLn $ " loadRunFiles " <> (unwords $ fmap fst runFiles)
+   
+    putStrLn $ " loadedRunFiles " <> (unwords $ fmap fst runFiles)
 
     assocs <- if ("jsonl" `isSuffixOf` assocsFile)  
                     then readJsonLRunFile assocsFile
@@ -230,6 +233,8 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
                         else error $ "First convert file to jsonl or jsonl.gz "<> assocsFile
 
 
+    when (null assocs) (fail $ "no associations found in "<> assocsFile)
+    putStrLn $ " loaded Assoc File " <> (show $ Data.List.head assocs)
 
     -- let projectGroundTruth = case trainFieldOpt of
     --                             Nothing -> id
@@ -244,6 +249,8 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
                             else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile
                     
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
+
+    putStrLn "ent-rank-lips starting feature creation..."
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
@@ -285,6 +292,8 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
         modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just rankLipsVersion) defaultFeatureParamsOpt
 
     putStrLn $ "Sample of allDataList \n" <> ( unlines $ fmap show $ Data.List.take 10 $ M.toList allDataList)
+    putStrLn "ent-rank-lips starting training ..."
+
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
 
 
