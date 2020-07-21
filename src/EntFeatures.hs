@@ -161,8 +161,41 @@ memoize f =
                                     modifyIORef' ref (M.insert x y)  -- we read the ref again, because f might take a while to compute 
                                     return y
 
+
+
+
 resolveAssociations :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
 resolveAssociations predictFields assocs =
+    let idx = M.fromListWith (<>)
+            $   [ ((queryId, rdKey, rdValue), [documentName])
+                | SimplirRun.RankingEntry {..}<- assocs
+                , (rdKey, rdValue) <- rankDataAtoms documentName
+                ] 
+    in (\query doc ->
+            let(x:xs) = [ S.fromList documentNames
+                        | (partKey, partValue) <- rankDataAtoms doc 
+                        , let documentNames = fromMaybe [] $ (query, partKey, partValue) `M.lookup` idx
+                        ]
+            in  fmap predictProj 
+                $ S.toList 
+                $ foldr (S.intersection) x xs            
+       )
+
+  where rankDataAtoms :: RankData -> [(RankDataField, RankDataValue)]
+        rankDataAtoms (RankData m) =
+                [(rdKey, rdValue)
+                | (rdKey, rdValues) <- M.toList m
+                , rdValue <- case rdValues of
+                    txt@(RankDataText _) -> [txt]
+                    RankDataList lst -> fmap RankDataText lst
+                ] 
+        predictProj :: RankData -> RankData
+        predictProj rd =
+            modRankData (\m -> M.filterWithKey (\k v -> k `S.member` predictFields) m) rd
+
+
+resolveAssociationsOld :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociationsOld predictFields assocs =
     let assocIdx = M.fromListWith (<>)
                  $  [ (queryId, [documentName])
                         | SimplirRun.RankingEntry {..}<- assocs
