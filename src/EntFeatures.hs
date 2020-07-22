@@ -58,7 +58,7 @@ import qualified Debug.Trace as Debug
 import qualified Data.Text as T
 import Data.Maybe
 import qualified Data.Set as S
-import Control.Concurrent.Map (mapConcurrentlyL)
+-- import Control.Concurrent.Map (mapConcurrentlyL)
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -66,7 +66,7 @@ scale x feats =
 
 
 
-runFilesToEntFeatureVectorsMap :: forall ph q d . (Ord q, Ord d)
+runFilesToEntFeatureVectorsMap :: forall ph q d . (Ord q, Ord d,      Show d, Show q)
                           =>  F.FeatureSpace Feat ph 
                           -> F.FeatureVec Feat ph Double
                           -> (q -> d -> [d])
@@ -86,11 +86,14 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                 projectFeatures plainFeats = 
                     M.mapWithKey proj plainFeats
                   where proj queryId featMap =  
-                                M.fromListWith (<>)   --- <-- build map
+                                M.map (M.toList)  -- unwrap inner (M.Map Feat Double) to [(Feat,Double)]
+                                $ M.fromListWith (M.unionWith (+))  -- M.Map d (M.Map Feat Double) to nub duplicate features with (+)
                                 $ withStrategy (parBuffer 100 $ evalTuple2 rseq rseq)
-                                $  [   
-                                        ( documentName' 
-                                        , scale normalizationFactor featList
+                                $  [ Debug.trace ("projectFeatures: "<> unlines ["-queryId", show queryId,  "- documentName", show documentName, "- documentName'", show documentName'
+                                                                     , "- normalizationFactor", show normalizationFactor, "- featList", show featList])
+                                     $   ( documentName' 
+                                        , M.fromListWith (+) 
+                                          $ scale normalizationFactor featList
                                         )
                                     | (documentName, featList) <- M.toList featMap 
                                     , let !assocDocumentNames = resolveAssocs queryId documentName   --  <-- sloooow?
@@ -116,7 +119,7 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                           , (entry@(SimplirRun.RankingEntry {..}) :: SimplirRun.RankingEntry' q d) <- rankingEntries
                           ]
 
-
+                 
 
         featureVectors :: M.Map q (M.Map d (F.FeatureVec Feat ph Double))
         featureVectors =  fmap featureVectorize features           
@@ -277,12 +280,8 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
     when (null assocs) (fail $ "no associations found in "<> assocsFile)
     putStrLn $ " loaded Assoc File " <> (show $ Data.List.head assocs)
 
-    -- let projectGroundTruth = case trainFieldOpt of
-    --                             Nothing -> id
-    --                             Just field -> fmap (\entry@(QRel.Entry {..}) -> entry { QRel.documentName = projectRankData field documentName }) 
     let projectGroundTruth = id
     QrelInfo{..} <- {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
-                 -- <$> readJsonLQrelFile qrelFile
                  <$>  if ("jsonl" `isSuffixOf` qrelFile)  
                         then readJsonLQrelFile qrelFile
                         else if ("jsonl.gz" `isSuffixOf` qrelFile)  
@@ -299,6 +298,8 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
+    putStrLn $ "entFeatureVectors" <> (unlines $ fmap show $ Data.List.take 1 $ M.toList $ M.map (Data.List.take 10) featureDataList )
+    let
         (featureDataList', createModelEnvelope') =
             if useZScore
                 then
@@ -323,8 +324,6 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
 
     putStrLn $ "featureDataList' " <> show featureDataList'
     let
-        -- featureDataListProjected = projectFeatureSpace projD featureDataList'     ----   d -> d'
-
         allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
         allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList'
 
