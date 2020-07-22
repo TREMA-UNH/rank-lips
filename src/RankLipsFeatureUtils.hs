@@ -52,7 +52,7 @@ featureSet FeatureParams{..} =
         featureNames = convertFeatureNames featureVariants features 
 
         produceFeatures :: FilePath -> SimplirRun.RankingEntry' q d -> [(Feat, Double)]
-        produceFeatures fname SimplirRun.RankingEntry{..} =
+        produceFeatures fname SimplirRun.RankingEntry{..} = {-# SCC "produceFeatures" #-}
             [ produceFeature ft
             | ft <- featureVariants
             ]

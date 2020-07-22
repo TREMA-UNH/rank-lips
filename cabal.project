@@ -9,6 +9,18 @@ packages:
     ./
 
 debug-info: True
+profiling-detail: none
+
+package aeson
+  profiling-detail: none
+package *
+  profiling-detail: none
+package simplir-io
+  profiling-detail: toplevel-functions
+package simplir
+  profiling-detail: toplevel-functions
+package rank-lips
+  profiling-detail: toplevel-functions
 
 allow-newer: fgl
 source-repository-package
