@@ -89,9 +89,9 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                                 M.map (M.toList)  -- unwrap inner (M.Map Feat Double) to [(Feat,Double)]
                                 $ M.fromListWith (M.unionWith (+))  -- M.Map d (M.Map Feat Double) to nub duplicate features with (+)
                                 $ withStrategy (parBuffer 100 $ evalTuple2 rseq rseq)
-                                $  [ Debug.trace ("projectFeatures: "<> unlines ["-queryId", show queryId,  "- documentName", show documentName, "- documentName'", show documentName'
-                                                                     , "- normalizationFactor", show normalizationFactor, "- featList", show featList])
-                                     $   ( documentName' 
+                                --   $  [ Debug.trace ("projectFeatures: "<> unlines ["-queryId", show queryId,  "- documentName", show documentName, "- documentName'", show documentName'
+                                --                                  --  , "- normalizationFactor", show normalizationFactor, "- featList", show featList])
+                                $   [ ( documentName' 
                                         , M.fromListWith (+) 
                                           $ scale normalizationFactor featList
                                         )
@@ -376,7 +376,7 @@ train includeCv fspace allData qrel miniBatchParams convergenceDiagParams output
 
     let experimentName = ""
 
-    putStrLn "made folds"
+    putStrLn "ready to optimize..."
     let (fullRestartResults, foldRestartResults) =
             RankLips.trainMe miniBatchParams convergenceDiagParams gen0 allData fspace metric
 
