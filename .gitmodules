@@ -1,6 +1,3 @@
 [submodule "simplir"]
 	path = simplir
 	url = https://git@git.smart-cactus.org/ben/simpl-ir
-[submodule "trec-car-tools-haskell"]
-	path = trec-car-tools-haskell
-	url = git@github.com:TREMA-UNH/trec-car-tools-haskell.git
