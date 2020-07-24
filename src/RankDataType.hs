@@ -146,6 +146,14 @@ singletonRankData :: RankDataField -> RankDataValue -> RankData
 singletonRankData field value = 
     RankData $ M.singleton field value
 
+unionRankData :: RankData -> RankData -> RankData
+unionRankData (RankData m1) (RankData m2) =
+    RankData $ M.union m1 m2
+
+fromListRankData :: [(RankDataField, RankDataValue)] -> RankData
+fromListRankData lst = 
+     RankData $  M.fromList lst
+     
 projectRankData :: RankDataField -> RankData -> RankData 
 projectRankData field rd = modRankData (M.filterWithKey (\k _ -> k == field) ) rd
 
