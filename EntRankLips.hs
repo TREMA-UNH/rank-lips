@@ -57,6 +57,7 @@ import qualified TrainAndSave as RankLips
 import qualified Data.Aeson as Aeson
 import qualified Data.List as L
 import Data.Ord (comparing, Down(Down))
+import qualified SimplIR.Format.QRel as SimplirQrel
 
 
 
@@ -170,6 +171,7 @@ opts = subparser
     <>  cmd "conv-runs"   doConvRuns'
     <>  cmd "export-runs" doExportRuns'
     <>  cmd "rank-aggregation" doRankAggregation'
+    <>  cmd "qrels-assocs" doQrelsAssocs'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -317,6 +319,24 @@ opts = subparser
                       , (entry@(SimplirRun.RankingEntry {..}) :: SimplirRun.RankingEntry' q d) <- rankingEntries
                       ]
     
+
+    doQrelsAssocs' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new assocs file" <> metavar "FILE")     
+          <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )
+          <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "qrel-field" <> metavar "FIELD" <> help "json field represented in qrels file" )
+      where
+        f :: FilePath -> FilePath -> RankDataField ->  IO()
+        f outputFile qrelFile qrelField = do
+            -- createDirectoryIfMissing True outputFile
+
+            qrels <- readTrecEvalQrelFile id convD qrelFile
+            let assocs = [  SimplirRun.RankingEntry{documentRank=1, documentScore=1.0, methodName="qrel", ..}
+                         | SimplirQrel.Entry{..} <- qrels
+                         ] 
+            writeJsonLRunFile outputFile assocs
+          where  
+            convD :: QRel.DocumentName -> RankData
+            convD txt = singletonRankData qrelField (RankDataText txt)
 
 debugTr :: (x -> String) ->  x -> x
 debugTr msg x = Debug.trace (msg x) $ x
