@@ -58,6 +58,8 @@ import qualified Data.Aeson as Aeson
 import qualified Data.List as L
 import Data.Ord (comparing, Down(Down))
 import qualified SimplIR.Format.QRel as SimplirQrel
+import SimplIR.LearningToRankWrapper (modelFeatures, Model)
+import qualified SimplIR.FeatureSpace as F
 
 
 
@@ -167,6 +169,7 @@ data ModelVersion = ModelVersionV10 | ModelVersionV11
 opts :: Parser (IO ())
 opts = subparser
     $  cmd "train"        doTrain'
+    <>  cmd "predict"      doPredict'
     <>  cmd "conv-qrels"  doConvQrels'
     <>  cmd "conv-runs"   doConvRuns'
     <>  cmd "export-runs" doExportRuns'
@@ -217,7 +220,46 @@ opts = subparser
 
                 predictFieldSet = S.fromList $ predictField
             doEntTrain @T.Text (fparams{features=features'}) assocsFile outputFilePrefix experimentName qrelFile miniBatchParams includeCv useZscore saveHeldoutQueriesInModel convergenceParams (Just defaultFeatureParams) predictFieldSet getRankLipsVersion
+
+    doPredict' =
+        f <$> featureParamsParser
+          <*> option str (long "assocs" <> short 'a' <> metavar "JSONL" <> help "json file with associations between rank data fields")
+          <*> option str (long "output-directory" <> short 'O' <> help "directory to write output to. (directories will be created)" <> metavar "OUTDIR")     
+          <*> option str (long "output-prefix" <> short 'o' <> value "rank-lips" <> help "filename prefix for all written output; Default \"rank-lips\"" <> metavar "FILENAME")     
+          <*> optional (option str (long "qrels" <> short 'q' <> help "qrels file used for evaluation" <> metavar "QRELS" ))
+          <*> defaultFeatureParamsParser
+          <*> option auto (short 'j' <> long "threads" <> help "enable multi-threading with J threads" <> metavar "J" <> value 1)
+          <*> some (option ( RankDataField . T.pack <$> str) (short 'P' <> long "predict" <> metavar "FIELD" <> help "json field predict" ))
+          <*> option str (short 'm' <> long "model" <> help "model file" <> metavar "MODEL")
+      where
+        f :: FeatureParams -> FilePath ->  FilePath -> FilePath -> Maybe FilePath -> DefaultFeatureParams -> Int -> [RankDataField] -> FilePath -> IO()
+        f fparams@FeatureParams{..} assocsFile outputDir outputPrefix qrelFileOpt defaultFeatureParams numThreads predictField modelFile= do
+            setNumCapabilities numThreads
+
+            putStrLn "ent-rank-lips predict"
+
+            dirFeatureFiles <- listDirectory featureRunsDirectory
+            createDirectoryIfMissing True outputDir
+            let features' = case features of
+                                [] -> dirFeatureFiles
+                                fs -> fs 
+                outputFilePrefix = outputDir </> outputPrefix
+
+                predictFieldSet = S.fromList $ predictField
+
+            (SomeRankLipsModel (lipsModel :: RankLipsModel f ph)) <- deserializeRankLipsModel <$> loadRankLipsModel modelFile
+
+            let model ::  Model Feat ph
+                model = trainedModel lipsModel
+                fspace = modelFeatures model  
+                modelFeatureFiles = F.featureNames fspace 
+
+                predictFieldSet = S.fromList predictField
             
+            doEntPredict @T.Text (fparams{features=features'}) assocsFile outputFilePrefix (Just defaultFeatureParams) model qrelFileOpt predictFieldSet
+                        -- todo !!!!!
+
+
     doConvQrels' =
         f <$> option str (long "output" <> short 'o' <> help "location of new qrels file" <> metavar "FILE")     
           <*> option str (long "qrels" <> short 'q' <> help "qrels file used for training" <> metavar "QRELS" )

@@ -59,6 +59,9 @@ import qualified Data.Text as T
 import Data.Maybe
 import qualified Data.Set as S
 -- import Control.Concurrent.Map (mapConcurrentlyL)
+import qualified SimplIR.Ranking as Ranking
+import System.FilePath
+
 
 scale :: Double -> [(Feat,Double)] ->  [(Feat,Double)] 
 scale x feats = 
@@ -235,6 +238,98 @@ resolveAssociationsOld predictFields assocs =
 
 
 debugTr x y = Debug.trace (x <> show y) y
+
+
+
+doEntPredict :: forall q ph  . (Ord q, Show q, Render q, Aeson.FromJSON q, Aeson.ToJSON q, Aeson.ToJSON IsRelevant)
+            => FeatureParams
+            -> FilePath
+            -> FilePath 
+            -> Maybe DefaultFeatureParams
+            -> Model Feat ph
+            -> Maybe FilePath 
+            -> S.Set RankDataField
+            -> IO () 
+doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatureParamsOpt model qrelFileOpt predictionFields = do
+    let fspace = modelFeatures model
+        defaultFeatureVec = createDefaultFeatureVec fspace defaultFeatureParamsOpt
+        FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
+          = {-# SCC "featureSet" #-} featureSet featureParams
+
+    -- QrelInfo{..} <- case qrelFileOpt of
+    --                     Just qrelFile -> do
+    --                         loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
+    --                     Nothing -> return $ noQrelInfo
+
+
+    let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
+         = {-# SCC "featureSet" #-} featureSet featureParams
+
+    putStrLn "ent-rank-lips starting run/assocs/qrel loading..."
+
+    -- F.SomeFeatureSpace (fspace:: F.FeatureSpace Feat ph) <- pure $ F.mkFeatureSpace featureNames
+
+    runFiles <- {-# SCC "loadJsonLRunFiles" #-} RankLips.loadJsonLRunFiles featuresRunFormat featureRunsDirectory features
+   
+    putStrLn $ " loadedRunFiles " <> (unwords $ fmap fst runFiles)
+
+    assocs <- 
+      {-# SCC "assocs" #-}
+      if ("jsonl" `isSuffixOf` assocsFile)  
+                    then readJsonLRunFile assocsFile
+                    else if ("jsonl.gz" `isSuffixOf` assocsFile)  
+                        then readGzJsonLRunFile assocsFile
+                        else error $ "First convert file to jsonl or jsonl.gz "<> assocsFile
+
+
+    when (null assocs) (fail $ "no associations found in "<> assocsFile)
+    putStrLn $ " loaded Assoc File " <> (show $ Data.List.head assocs)
+
+    let qrelFile = fromJust qrelFileOpt
+    let projectGroundTruth = id
+    QrelInfo{..} <- {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
+                 <$>  if ("jsonl" `isSuffixOf` qrelFile)  
+                        then readJsonLQrelFile qrelFile
+                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
+                            then readGzJsonLQrelFile qrelFile
+                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile)
+                    
+    putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
+
+    putStrLn "ent-rank-lips starting feature creation..."
+
+    let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
+
+        featureDataMap = {-# SCC "featureDataMap" #-} runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations predictionFields assocs) produceFeatures runFiles
+        featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
+        featureDataList = fmap M.toList featureDataMap
+
+        allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
+        allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList
+
+
+
+        ranking = withStrategy (parTraversable rseq)
+                $ rerankRankings' model allDataListRaw    
+
+        outRun = [ SimplirRun.RankingEntry {methodName ="predict", ..} 
+                 | (queryId, rank) <- M.toList ranking
+                 ,(documentRank, (documentScore, documentName)) <- Data.List.zip [1..] $ Ranking.toSortedList rank
+                 ]        
+
+    if  ("jsonl.gz" `isSuffixOf` outputFile )
+        then writeGzJsonLRunFile (outputFile) outRun
+        else if ("jsonl" `isSuffixOf` outputFile )
+            then writeJsonLRunFile (outputFile) outRun
+            else writeGzJsonLRunFile (outputFile <.> "jsonl.gz") outRun
+    
+        
+    let
+        metric' :: ScoringMetric IsRelevant q
+        metric' = metric 
+        testScore = metric' ranking
+
+    putStrLn $ "testScore "<> show testScore
 
 
 
