@@ -260,10 +260,6 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
         FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
           = {-# SCC "featureSet" #-} featureSet featureParams
 
-    -- QrelInfo{..} <- case qrelFileOpt of
-    --                     Just qrelFile -> do
-    --                         loadQrelInfo <$> readTrecEvalQrelFile convQ convD qrelFile
-    --                     Nothing -> return $ noQrelInfo
 
 
     let FeatureSet {featureNames=featureNames,  produceFeatures=produceFeatures}
@@ -289,15 +285,21 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
     when (null assocs) (fail $ "no associations found in "<> assocsFile)
     putStrLn $ " loaded Assoc File " <> (show $ Data.List.head assocs)
 
-    let qrelFile = fromJust qrelFileOpt
+    -- let qrelFile = fromJust qrelFileOpt
     let projectGroundTruth = id
-    QrelInfo{..} <- {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
-                 <$>  if ("jsonl" `isSuffixOf` qrelFile)  
-                        then readJsonLQrelFile qrelFile
-                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
-                            then readGzJsonLQrelFile qrelFile
-                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile)
-                    
+    QrelInfo{..} <- case qrelFileOpt of
+                        Just qrelFile -> do
+                            {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
+                                <$>  if ("jsonl" `isSuffixOf` qrelFile)  
+                                        then readJsonLQrelFile qrelFile
+                                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
+                                            then readGzJsonLQrelFile qrelFile
+                                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile)
+                        Nothing -> return $ noQrelInfo
+
+
+
+
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
 
     putStrLn "ent-rank-lips starting feature creation..."
@@ -326,14 +328,14 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
         else if ("jsonl" `isSuffixOf` outputFile )
             then writeJsonLRunFile (outputFile) outRun
             else writeGzJsonLRunFile (outputFile <.> "jsonl.gz") outRun
-    
-        
+
+
     let
         metric' :: ScoringMetric IsRelevant q
         metric' = metric 
         testScore = metric' ranking
-
-    putStrLn $ "testScore "<> show testScore
+    when (isJust qrelFileOpt) <$>
+                putStrLn $ "testScore "<> show testScore
 
 
 
