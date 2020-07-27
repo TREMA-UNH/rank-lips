@@ -168,9 +168,11 @@ memoize f =
 
 
 
-
-resolveAssociations :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
-resolveAssociations predictFields assocs =
+-- | Return all associations, for which partially matches a given documentName, i.e., {assocs | docName \subsetOf assocs}.
+-- Typically docName is associated with a feature that we want to transfer through the association.
+-- The predictField is given, it will be used to project the assoc to the output type.
+resolveAssociations :: (Eq q, Show q, Ord q) => Maybe (S.Set RankDataField) -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
+resolveAssociations predictFieldsOpt assocs =
     let idx = M.fromListWith (<>)
             $   [ ((queryId, rdKey, rdValue), [documentName])
                 | SimplirRun.RankingEntry {..}<- assocs
@@ -196,7 +198,9 @@ resolveAssociations predictFields assocs =
                 ] 
         predictProj :: RankData -> RankData
         predictProj rd =
-            modRankData (\m -> M.filterWithKey (\k v -> k `S.member` predictFields) m) rd
+            case predictFieldsOpt of
+                Just predictFields -> modRankData (\m -> M.filterWithKey (\k v -> k `S.member` predictFields) m) rd
+                Nothing -> rd
 
 
 resolveAssociationsOld :: (Eq q, Show q, Ord q) => S.Set RankDataField -> [SimplirRun.RankingEntry' q RankData] -> q -> RankData -> [RankData]
@@ -300,7 +304,7 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = {-# SCC "featureDataMap" #-} runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations predictionFields assocs) produceFeatures runFiles
+        featureDataMap = {-# SCC "featureDataMap" #-} runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations (Just predictionFields) assocs) produceFeatures runFiles
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 
@@ -389,7 +393,7 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
 
     let defaultFeatureVec =  createEntDefaultFeatureVec fspace defaultFeatureParamsOpt
 
-        featureDataMap = {-# SCC "featureDataMap" #-} runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations predictionFields assocs) produceFeatures runFiles
+        featureDataMap = {-# SCC "featureDataMap" #-} runFilesToEntFeatureVectorsMap fspace defaultFeatureVec (resolveAssociations (Just predictionFields) assocs) produceFeatures runFiles
         featureDataList :: M.Map q [( RankData, (F.FeatureVec Feat ph Double))] 
         featureDataList = fmap M.toList featureDataMap
 

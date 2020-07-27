@@ -176,6 +176,7 @@ opts = subparser
     <>  cmd "rank-aggregation" doRankAggregation'
     <>  cmd "qrels-assocs" doQrelsAssocs'
     <>  cmd "filter-topk" doFilterTopK'
+    <>  cmd "filter-assocs" doFilterAssocs'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -401,6 +402,44 @@ opts = subparser
                     JsonLRunFormat -> writeJsonLRunFile outputFile runData'
                     JsonLGzRunFormat -> writeGzJsonLRunFile outputFile runData'
                     _ -> fail $ "Output filname needs to end with *.jsonl or *.jsonl.gz"
+
+
+    doFilterAssocs' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
+          <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
+          <*> option str (long "assocs" <> short 'a' <> help "json associatino file " <> metavar "ASSOCS" )
+      where
+        f :: FilePath -> FilePath -> FilePath ->  IO()
+        f outputFile runFile assocsFile = do
+            runData <- case runFormatFromFilename runFile of
+                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData runFile
+                              JsonLGzRunFormat -> readGzJsonLRunFile runFile 
+                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> runFile
+
+            assocsData <- case runFormatFromFilename assocsFile of
+                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData assocsFile
+                              JsonLGzRunFormat -> readGzJsonLRunFile assocsFile 
+                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> assocsFile
+
+            let partialMatch = resolveAssociations (Nothing) assocsData
+                assocsToKeep :: M.Map T.Text (S.Set RankData)
+                assocsToKeep = M.fromListWith (S.union)
+                              $ [ (queryId, S.fromList $ partialMatch queryId documentName)
+                                | entry@(SimplirRun.RankingEntry {..}) <- runData
+                                ]
+                assocsData' = [ entry
+                              | entry@(SimplirRun.RankingEntry {..}) <- assocsData
+                              , documentName `S.member` ( fromMaybe S.empty $ queryId `M.lookup` assocsToKeep)
+                              ]
+
+            case runFormatFromFilename outputFile of
+                    JsonLRunFormat -> writeJsonLRunFile outputFile assocsData'
+                    JsonLGzRunFormat -> writeGzJsonLRunFile outputFile assocsData'
+                    _ -> fail $ "Output filname needs to end with *.jsonl or *.jsonl.gz"
+          -- where isPartialMatch :: RankData  -> Bool
+          --       isPartialMatch entry =
+          --         undefined
+
 
         
 debugTr :: (x -> String) ->  x -> x
