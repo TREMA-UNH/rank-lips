@@ -379,6 +379,29 @@ opts = subparser
             convD :: QRel.DocumentName -> RankData
             convD txt = singletonRankData qrelField (RankDataText txt)
 
+
+    doTopK' =
+        f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
+          <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
+          <*> option auto (long "top-k" <> short 'k' <> help "take the highest K ranked items" <> value 1)
+      where
+        f :: FilePath -> FilePath -> Int ->  IO()
+        f outputFile runFile topK = do
+            runData <- case runFormatFromFilename runFile of
+                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData runFile
+                              JsonLGzRunFormat -> readGzJsonLRunFile runFile 
+                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> runFile
+
+            let runData' = [ entry
+                              | entry@(SimplirRun.RankingEntry {..}) <- runData
+                              , documentRank <= topK
+                            ]
+            case runFormatFromFilename outputFile of
+                    JsonLRunFormat -> writeJsonLRunFile outputFile runData'
+                    JsonLGzRunFormat -> writeGzJsonLRunFile outputFile runData'
+                    _ -> fail $ "Output filname needs to end with *.jsonl or *.jsonl.gz"
+
+        
 debugTr :: (x -> String) ->  x -> x
 debugTr msg x = Debug.trace (msg x) $ x
 

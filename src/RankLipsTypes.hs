@@ -157,6 +157,13 @@ data SomeRankLipsModel f where
 data RunFormat = TrecEvalRunFormat | JsonLRunFormat | JsonLGzRunFormat
   deriving (Eq, Show, Read, Enum, Bounded)
 
+runFormatFromFilename :: FilePath -> RunFormat
+runFormatFromFilename runFile =
+    if ("jsonl.gz" `isSuffixOf` runFile)
+        then JsonLGzRunFormat
+    else if ("jsonl" `isSuffixOf` runFile)
+        then JsonLRunFormat
+        else TrecEvalRunFormat    
 
 data FeatureParams = FeatureParams { featureRunsDirectory :: FilePath
                                    , features :: [FilePath]
