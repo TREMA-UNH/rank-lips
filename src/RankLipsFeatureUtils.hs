@@ -31,6 +31,7 @@ import qualified SimplIR.FeatureSpace as F
 import SimplIR.FeatureSpace (FeatureVec)
 
 import RankLipsTypes
+import Data.Maybe (mapMaybe)
 
 convertFeatureNames :: [FeatureVariant] -> [FilePath] -> S.Set Feat
 convertFeatureNames featureVariants features = 
@@ -68,13 +69,13 @@ featureSet FeatureParams{..} =
 
 internFeatures :: F.FeatureSpace Feat ph -> [(Feat, d)] -> [(Feat, d)]
 internFeatures fspace features =
-    fmap internF features
+    mapMaybe internF features
   where 
     internF (f,v) =  
       let f' = F.internFeatureName fspace f
       in case f' of
-            Just f'' -> (f'', v)
-            Nothing -> error $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
+            Just f'' -> Just (f'', v)
+            Nothing -> Nothing --  $ "Trying to intern feature "<> show f <> ", but is not defined in featurespace."
 
 
 
