@@ -175,6 +175,7 @@ opts = subparser
     <>  cmd "export-runs" doExportRuns'
     <>  cmd "rank-aggregation" doRankAggregation'
     <>  cmd "qrels-assocs" doQrelsAssocs'
+    <>  cmd "filter-topk" doFilterTopK'
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
      
@@ -380,7 +381,7 @@ opts = subparser
             convD txt = singletonRankData qrelField (RankDataText txt)
 
 
-    doTopK' =
+    doFilterTopK' =
         f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
           <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
           <*> option auto (long "top-k" <> short 'k' <> help "take the highest K ranked items" <> value 1)
