@@ -257,7 +257,6 @@ opts = subparser
                 predictFieldSet = S.fromList predictField
             
             doEntPredict @T.Text (fparams{features=features'}) assocsFile outputFilePrefix (Just defaultFeatureParams) model qrelFileOpt predictFieldSet
-                        -- todo !!!!!
 
 
     doConvQrels' =

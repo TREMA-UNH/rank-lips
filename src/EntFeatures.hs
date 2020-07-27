@@ -314,7 +314,7 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
 
         outRun = [ SimplirRun.RankingEntry {methodName ="predict", ..} 
                  | (queryId, rank) <- M.toList ranking
-                 ,(documentRank, (documentScore, documentName)) <- Data.List.zip [1..] $ Ranking.toSortedList rank
+                 ,(documentRank, (documentScore, (documentName, _rel))) <- Data.List.zip [1..] $ Ranking.toSortedList rank
                  ]        
 
     if  ("jsonl.gz" `isSuffixOf` outputFile )
