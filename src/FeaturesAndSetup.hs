@@ -52,6 +52,7 @@ import QrelInfo
 import RankLipsFeatureUtils
 import GHC.Stack (HasCallStack)
 import Control.Concurrent.Map (mapConcurrentlyL)
+import Control.Concurrent (getNumCapabilities)
 
 
 
@@ -259,12 +260,15 @@ loadJsonLRunFiles :: forall q d
                   . (Aeson.FromJSON q, Aeson.FromJSON d)
                   => RunFormat -> FilePath -> [FilePath] ->  IO [(FilePath, [SimplirRun.RankingEntry' q d])] 
 loadJsonLRunFiles JsonLRunFormat prefix inputRuns = do
-    mapConcurrentlyL 20 ((\fname -> (fname,)
+    numCap <- getNumCapabilities
+    mapConcurrentlyL numCap ((\fname -> (fname,)
                             <$> readJsonLRunFile (prefix </> fname))
                         ) inputRuns    
 
+
 loadJsonLRunFiles JsonLGzRunFormat prefix inputRuns = do
-    mapConcurrentlyL 20 ( (\fname -> (fname,)
+    numCap <- getNumCapabilities
+    mapConcurrentlyL numCap ( (\fname -> (fname,)
                         <$> readGzJsonLRunFile (prefix </> fname))
                         ) inputRuns    
 
