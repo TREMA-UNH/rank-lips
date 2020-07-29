@@ -293,18 +293,10 @@ opts = subparser
         f <$> option str (long "output" <> short 'o' <> help "location of new trec-eval run file" <> metavar "FILE")     
           <*> option str (long "run" <> short 'r' <> help "json run file " <> metavar "RUN" )
           <*> option ( RankDataField . T.pack <$> str) (short 'p' <> long "run-field" <> metavar "FIELD" <> help "json field to expose in run file" )
-          <*> (flag' JsonLRunFormat  (long "jsonl" <> help "Load data from jsonl file instead of trec_eval run file")   
-              <|> flag' JsonLGzRunFormat  (long "jsonl.gz" <> help "Load data from jsonl.gz file instead of trec_eval run file")   
-              <|> flag' TrecEvalRunFormat  (long "trec-eval" <> help "Load data from trec_eval compatible run file")   
-              <|> flag' JsonLRunFormat (help "Default: Load data from jsonl compatible run file")
-            )
       where
-        f :: FilePath -> FilePath -> RankDataField -> RunFormat ->  IO()
-        f outputFile runFile runField runFormat = do
-            runData <- case runFormat of
-                        JsonLRunFormat -> readJsonLRunFile runFile
-                        JsonLGzRunFormat -> readGzJsonLRunFile runFile
-                        _ -> fail $ "Convert file to jsonl or jsonl.gz format: "<> runFile
+        f :: FilePath -> FilePath -> RankDataField ->  IO()
+        f outputFile runFile runField  = do
+            runData <- readAnyJsonLRunFile runFile
             writeTrecEvalRunFile outputFile runData id convD
           where  
             convD :: RankData -> SimplirRun.DocumentName
@@ -389,19 +381,13 @@ opts = subparser
       where
         f :: FilePath -> FilePath -> Int ->  IO()
         f outputFile runFile topK = do
-            runData <- case runFormatFromFilename runFile of
-                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData runFile
-                              JsonLGzRunFormat -> readGzJsonLRunFile runFile 
-                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> runFile
+            runData <- readAnyJsonLRunFile @T.Text @RankData runFile
 
             let runData' = [ entry
                               | entry@(SimplirRun.RankingEntry {..}) <- runData
                               , documentRank <= topK
                             ]
-            case runFormatFromFilename outputFile of
-                    JsonLRunFormat -> writeJsonLRunFile outputFile runData'
-                    JsonLGzRunFormat -> writeGzJsonLRunFile outputFile runData'
-                    _ -> fail $ "Output filname needs to end with *.jsonl or *.jsonl.gz"
+            writeAnyJsonLRunFile outputFile runData'
 
 
     doFilterAssocs' =
@@ -411,15 +397,9 @@ opts = subparser
       where
         f :: FilePath -> FilePath -> FilePath ->  IO()
         f outputFile runFile assocsFile = do
-            runData <- case runFormatFromFilename runFile of
-                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData runFile
-                              JsonLGzRunFormat -> readGzJsonLRunFile runFile 
-                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> runFile
+            runData <- readAnyJsonLRunFile @T.Text @RankData runFile
 
-            assocsData <- case runFormatFromFilename assocsFile of
-                              JsonLRunFormat -> readJsonLRunFile @T.Text @RankData assocsFile
-                              JsonLGzRunFormat -> readGzJsonLRunFile assocsFile 
-                              _ -> error $ "Convert file to jsonl or jsonl.gz format: "<> assocsFile
+            assocsData <- readAnyJsonLRunFile @T.Text @RankData assocsFile
 
             let partialMatch = resolveAssociations (Nothing) assocsData
                 assocsToKeep :: M.Map T.Text (S.Set RankData)
@@ -432,14 +412,7 @@ opts = subparser
                               , documentName `S.member` ( fromMaybe S.empty $ queryId `M.lookup` assocsToKeep)
                               ]
 
-            case runFormatFromFilename outputFile of
-                    JsonLRunFormat -> writeJsonLRunFile outputFile assocsData'
-                    JsonLGzRunFormat -> writeGzJsonLRunFile outputFile assocsData'
-                    _ -> fail $ "Output filname needs to end with *.jsonl or *.jsonl.gz"
-          -- where isPartialMatch :: RankData  -> Bool
-          --       isPartialMatch entry =
-          --         undefined
-
+            writeAnyJsonLRunFile outputFile assocsData'
 
         
 debugTr :: (x -> String) ->  x -> x

@@ -244,6 +244,33 @@ resolveAssociationsOld predictFields assocs =
 debugTr x y = Debug.trace (x <> show y) y
 
 
+readAnyJsonLRunFile :: forall q d . (Aeson.FromJSON q, Aeson.FromJSON d) 
+                    => FilePath -> IO (([SimplirRun.RankingEntry' q d]))
+readAnyJsonLRunFile filename =
+      if ("jsonl" `isSuffixOf` filename)  
+        then readJsonLRunFile filename
+        else if ("jsonl.gz" `isSuffixOf` filename)  
+            then readGzJsonLRunFile filename
+            else error $ "First convert run file to jsonl or jsonl.gz "<> filename
+
+writeAnyJsonLRunFile ::  forall q d . (Aeson.ToJSON q, Aeson.ToJSON d) 
+                    =>  FilePath -> (([SimplirRun.RankingEntry' q d])) -> IO()
+writeAnyJsonLRunFile filename =
+      if ("jsonl" `isSuffixOf` filename)  
+        then writeJsonLRunFile filename
+        else if ("jsonl.gz" `isSuffixOf` filename)  
+            then writeGzJsonLRunFile filename
+            else error $ "First write run file to jsonl or jsonl.gz, then export to trec_eval run file "<> filename
+
+readAnyJsonLQrelFile ::  forall q d . (Aeson.FromJSON q, Aeson.FromJSON d) 
+                    =>   FilePath -> IO [QRel.Entry q d QRel.IsRelevant]
+readAnyJsonLQrelFile filename =
+      if ("jsonl" `isSuffixOf` filename)  
+        then readJsonLQrelFile filename
+        else if ("jsonl.gz" `isSuffixOf` filename)  
+            then readGzJsonLQrelFile filename
+            else error $ "First convert qrel file to jsonl or jsonl.gz "<> filename
+
 
 doEntPredict :: forall q ph  . (Ord q, Show q, Render q, Aeson.FromJSON q, Aeson.ToJSON q, Aeson.ToJSON IsRelevant)
             => FeatureParams
@@ -273,13 +300,7 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
    
     putStrLn $ " loadedRunFiles " <> (unwords $ fmap fst runFiles)
 
-    assocs <- 
-      {-# SCC "assocs" #-}
-      if ("jsonl" `isSuffixOf` assocsFile)  
-                    then readJsonLRunFile assocsFile
-                    else if ("jsonl.gz" `isSuffixOf` assocsFile)  
-                        then readGzJsonLRunFile assocsFile
-                        else error $ "First convert file to jsonl or jsonl.gz "<> assocsFile
+    assocs <- {-# SCC "assocs" #-} readAnyJsonLRunFile assocsFile
 
 
     when (null assocs) (fail $ "no associations found in "<> assocsFile)
@@ -288,14 +309,10 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
     -- let qrelFile = fromJust qrelFileOpt
     let projectGroundTruth = id
     QrelInfo{..} <- case qrelFileOpt of
-                        Just qrelFile -> do
-                            {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
-                                <$>  if ("jsonl" `isSuffixOf` qrelFile)  
-                                        then readJsonLQrelFile qrelFile
-                                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
-                                            then readGzJsonLQrelFile qrelFile
-                                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile)
-                        Nothing -> return $ noQrelInfo
+                            Just qrelFile -> do
+                                {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth) 
+                                    <$>  readAnyJsonLQrelFile qrelFile
+                            Nothing -> return $ noQrelInfo
 
 
 
@@ -323,11 +340,7 @@ doEntPredict featureParams@FeatureParams{..} assocsFile outputFile defaultFeatur
                  ,(documentRank, (documentScore, (documentName, _rel))) <- Data.List.zip [1..] $ Ranking.toSortedList rank
                  ]        
 
-    if  ("jsonl.gz" `isSuffixOf` outputFile )
-        then writeGzJsonLRunFile (outputFile) outRun
-        else if ("jsonl" `isSuffixOf` outputFile )
-            then writeJsonLRunFile (outputFile) outRun
-            else writeGzJsonLRunFile (outputFile <.> "jsonl.gz") outRun
+    writeAnyJsonLRunFile outputFile outRun
 
 
     let
@@ -371,23 +384,15 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
 
     assocs <- 
       {-# SCC "assocs" #-}
-      if ("jsonl" `isSuffixOf` assocsFile)  
-                    then readJsonLRunFile assocsFile
-                    else if ("jsonl.gz" `isSuffixOf` assocsFile)  
-                        then readGzJsonLRunFile assocsFile
-                        else error $ "First convert file to jsonl or jsonl.gz "<> assocsFile
+      readAnyJsonLRunFile assocsFile
 
 
     when (null assocs) (fail $ "no associations found in "<> assocsFile)
     putStrLn $ " loaded Assoc File " <> (show $ Data.List.head assocs)
 
     let projectGroundTruth = id
-    QrelInfo{..} <- {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth 
-                 <$>  if ("jsonl" `isSuffixOf` qrelFile)  
-                        then readJsonLQrelFile qrelFile
-                        else if ("jsonl.gz" `isSuffixOf` qrelFile)  
-                            then readGzJsonLQrelFile qrelFile
-                            else error $ "First convert file to jsonl or jsonl.gz "<> qrelFile)
+    QrelInfo{..} <- {-# SCC loadQrelInfo #-} (loadQrelInfo . projectGroundTruth) 
+                 <$>  readAnyJsonLQrelFile qrelFile
                     
     putStrLn $ " loaded qrels " <> (unlines $ fmap show  $ Data.List.take 10 $ qrelData)
 
