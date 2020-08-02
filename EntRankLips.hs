@@ -424,6 +424,13 @@ main = join $ execParser $ info (helper <*> opts) (progDescDoc (Just desc) <> fu
   where
     desc = Pretty.vcat $ Pretty.punctuate Pretty.linebreak
         [ para [ "ENT Rank-lips " ]
+        , para [ "Learning-to-rank tool that uses a trec_eval-inspired jsonl.gz format for features (run), associations (run) and ground truth for relevance (qrel). Figure [ENT-format] displays examples of the respective formats. The “document” entry can define any fields of your choice, but it has to be flat JSON object with no further nesting, where values are either strings or lists of strings (bools and numbers will be automatically converted to strings)." ]
+        , para [""]
+        , para [ "Feature/association format:"]
+        , para [ "{\"query\":queryid, \"document\":{\"entity\":\"Santa Claus\"}, \"rank\":1, \"score\":0.32 }"    ]
+        , para [ "Qrel format: "]
+        , para [ "{\"query\":queryid, \"document\":{\"entity\":\"Santa Claus\"},\"relevance\":1" ]
+        , para [ "For command-specific help call \"$cmd -h\""]
         ]
     para = Pretty.fillSep . map Pretty.text . foldMap words
   
