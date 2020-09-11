@@ -99,7 +99,7 @@ runFilesToEntFeatureVectorsMap fspace defaultFeatureVec resolveAssocs produceFea
                                           $ scale normalizationFactor featList
                                         )
                                     | (documentName, featList) <- M.toList featMap 
-                                    , let !assocDocumentNames = resolveAssocs queryId documentName   --  <-- sloooow?
+                                    , let !assocDocumentNames = resolveAssocs queryId documentName
                                     , let !normalizationFactor = 1.0 / (realToFrac $ Data.List.length assocDocumentNames)
                                     , documentName' <- assocDocumentNames
                                     ]
@@ -211,9 +211,9 @@ resolveAssociationsOld predictFields assocs =
                         ]
     in memoize $ \query doc ->
         let res =   [ predictProj documentName
-                    | let rds = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
+                    | let assocs = fromMaybe (error $ "no associations for query "<> (show query) <> " in assocIdx "<> (show assocIdx))
                             $ query `M.lookup` assocIdx
-                    , documentName <-  rds
+                    , documentName <-  assocs
                     , partialMatch doc documentName
                     ]
         in res
@@ -428,7 +428,7 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
                 else (featureDataList, RankLips.createModelEnvelope id)
 
 
-    putStrLn $ "featureDataList' " <> show featureDataList'
+    -- putStrLn $ "featureDataList' " <> show featureDataList'
     let
         allDataListRaw :: M.Map q [( RankData, FeatureVec Feat ph Double, Rel)]
         allDataListRaw = RankLips.augmentWithQrelsList_ (lookupQrel QRel.NotRelevant) featureDataList'
@@ -438,9 +438,36 @@ doEntTrain featureParams@FeatureParams{..} assocsFile outputFilePrefix experimen
         modelEnvelope = createModelEnvelope' (Just experimentName) (Just miniBatchParams) (Just convergenceParams) (Just useZScore) (Just saveHeldoutQueriesInModel) (Just rankLipsVersion) defaultFeatureParamsOpt
 
     putStrLn $ "Sample of allDataList \n" <> ( unlines $ fmap show $ Data.List.take 10 $ M.toList allDataList)
+    writeRankLibFeatureFile "rankLibFile.feat" allDataList
+
+
     putStrLn "ent-rank-lips starting training ..."
 
     train includeCv fspace allDataList qrelData miniBatchParams convergenceParams  outputFilePrefix modelEnvelope
+
+writeRankLibFeatureFile :: Render q => FilePath -> M.Map q [(RankData, FeatureVec Feat ph Double, QRel.IsRelevant)] -> IO ()
+writeRankLibFeatureFile filePath allData = do
+    writeFile filePath $ unlines $ convert allData
+  where convert allData =
+            [ unwords $ [formatRel rel, formatQid qid ] <> (formatFeats feats) <> [ formatDoc rankData]
+            | (qid, d) <- M.toList allData
+            , (rankData, feats, rel) <- d
+            ]
+        formatRel rel = case rel of
+                            QRel.NotRelevant -> "0"
+                            QRel.Relevant -> "1"
+                            _ -> error $ "Don't know how to format rel = "<> show rel
+        formatQid qid =
+            "qid:"<> (T.unpack $ render qid)
+        formatDoc rankData =
+            " # "<> (T.unpack $ render rankData )
+        formatFeats features =
+            [ show idx <> ":"<> show val 
+                | (idx, (fname, val)) <- Data.List.zip [1..] $ F.toList features 
+            ]
+
+
+
 
 
 

@@ -161,7 +161,7 @@ gitMsg =  concat [ "[git ", $(gitBranch), "@", $(gitHash)
 
 
 getRankLipsVersion :: String
-getRankLipsVersion = "ENT-Rank-lips version 1.1"
+getRankLipsVersion = "ENT-Rank-lips version 1.2.1"
 
 data ModelVersion = ModelVersionV10 | ModelVersionV11
     deriving (Eq, Read, Show)
