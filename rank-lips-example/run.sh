@@ -29,7 +29,7 @@ echo ""
 echo " ---- TRAIN -----"
 
 
-$bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips train -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TRAIN}" ${OPT_PARAM} ${FEAT_PARAM} --trec-eval-run
 
 
 ls ${OUT_DIR}
@@ -40,7 +40,7 @@ jq . < ${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json
 echo ""
 echo " ---- PREDICT ----- "
 
-$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TEST}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}
+$bin/rank-lips predict -d "${TEST_FEATURE_DIR}" -q "${TEST_QREL}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_TEST}" -m "${OUT_DIR}/${OUT_PREFIX_TRAIN}-model-train.json" ${FEAT_PARAM}  --trec-eval-run
 
 
 
@@ -58,7 +58,7 @@ echo ""
 echo " ---- CROSS-VALIDATION ----- "
 
 
-$bin/rank-lips train --train-cv -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_CV}" ${OPT_PARAM} ${FEAT_PARAM}
+$bin/rank-lips train --train-cv -d "${TRAIN_FEATURE_DIR}" -q "${TRAIN_QREL}" -e "${EXPERIMENT_NAME}" -O "${OUT_DIR}"  -o "${OUT_PREFIX_CV}" ${OPT_PARAM} ${FEAT_PARAM}  --trec-eval-run
 
 
 ls ${OUT_DIR} | grep "${OUT_PREFIX_CV}"
